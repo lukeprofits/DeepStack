@@ -94,7 +94,7 @@ export function App() {
   const activeRt = activeId ? state?.runtime[activeId] : undefined
 
   useEffect(() => {
-    document.title = active ? `${displayName(active)} · Stack` : 'Stack'
+    document.title = active ? `${displayName(active)} · DeepStack` : 'DeepStack'
   }, [active?.name, active?.autoName, active?.cwd, activeId])
 
   // ---- send-off: the server picked where to go next and will switch after `ms` unless the
@@ -240,16 +240,16 @@ export function App() {
     focusMainTerminal()
   }
 
-  if (conn === 'bye') return <div className="fullscreen-note">Stack has quit. Run <code>npm start</code> and this tab reconnects.</div>
+  if (conn === 'bye') return <div className="fullscreen-note">DeepStack has quit. Run <code>npm start</code> and this tab reconnects.</div>
   if (!state || !theme) {
     return (
       <div className="fullscreen-note">
         {conn === 'denied' && !stack.hasToken ? (
           <>
-            This tab isn't authorized. Open Stack with <code>npm start</code>.
+            This tab isn't authorized. Open DeepStack with <code>npm start</code>.
           </>
         ) : conn === 'denied' || conn === 'closed' ? (
-          'Waiting for the Stack server…'
+          'Waiting for the DeepStack server…'
         ) : null}
       </div>
     )

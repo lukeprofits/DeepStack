@@ -1,9 +1,9 @@
 {
-  "name": "stack",
-  "productName": "Stack",
+  "name": "deepstack",
+  "productName": "DeepStack",
   "version": "0.1.0",
   "private": true,
-  "description": "Terminal session manager for running many Claude Code sessions at once",
+  "description": "The most convenient way to manage many Claude Code sessions at once",
   "main": "out/server/index.js",
   "scripts": {
     "start": "npm run build --silent && node out/server/index.js",

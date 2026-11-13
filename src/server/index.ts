@@ -1,8 +1,8 @@
-// Stack server: owns every terminal (through the pty host child process) and serves the UI
+// DeepStack server: owns every terminal (through the pty host child process) and serves the UI
 // to a browser tab on 127.0.0.1. Closing the tab loses nothing; sessions live here.
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { APP_NAME } from '../shared/appName'
@@ -17,13 +17,44 @@ const DEFAULT_PORT = 4777
 process.on('uncaughtException', (e) => console.error('uncaught in server', e))
 process.on('unhandledRejection', (e) => console.error('unhandled rejection in server', e))
 
-function dataDir(): string {
-  if (process.env.STACK_DATA_DIR) return resolve(process.env.STACK_DATA_DIR)
-  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', APP_NAME)
-  return join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), APP_NAME.toLowerCase())
+function dataDirFor(name: string): string {
+  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', name)
+  return join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), name.toLowerCase())
 }
 
-const dir = dataDir()
+function pidAlive(pid: unknown): boolean {
+  if (typeof pid !== 'number') return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The app was called "Stack" before DeepStack. Move its data (sessions, settings, token,
+ * snapshots, history) to the new folder on first start, unless an old server is still
+ * running from it.
+ */
+function migrateLegacyDataDir(dir: string): void {
+  const legacy = dataDirFor('Stack')
+  if (existsSync(dir) || !existsSync(legacy)) return
+  try {
+    const running = JSON.parse(readFileSync(join(legacy, 'server.json'), 'utf8')).pid
+    if (pidAlive(running)) {
+      console.error(`An older Stack server (pid ${running}) is still running from ${legacy}. Quit it, then start ${APP_NAME} again to carry your sessions over.`)
+      return
+    }
+  } catch {
+    /* no server.json: nothing running */
+  }
+  renameSync(legacy, dir)
+  console.log(`Moved your sessions from ${legacy} to ${dir}`)
+}
+
+const dir = process.env.STACK_DATA_DIR ? resolve(process.env.STACK_DATA_DIR) : dataDirFor(APP_NAME)
+if (!process.env.STACK_DATA_DIR) migrateLegacyDataDir(dir)
 mkdirSync(dir, { recursive: true })
 const serverFile = join(dir, 'server.json')
 const tokenFile = join(dir, 'token.json')

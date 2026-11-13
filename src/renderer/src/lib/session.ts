@@ -7,7 +7,7 @@ export function setHome(h: string): void {
   home = h
 }
 
-/** Stack order (active sessions first, then inactive), used for the "Session N" fallback. */
+/** Order in the stack (active sessions first, then parked), used for the "Session N" fallback. */
 export function setStackOrder(sessions: SessionConfig[]): void {
   const ids = [...sessions.filter((s) => !s.inactive), ...sessions.filter((s) => s.inactive)].map((s) => s.id)
   order = new Map(ids.map((id, i) => [id, i + 1]))

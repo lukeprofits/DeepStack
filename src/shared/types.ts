@@ -24,7 +24,7 @@ export type Program =
 /** Persisted per-session config. Array order in AppState.sessions is the priority order. */
 export interface SessionConfig {
   id: string
-  /** Name set by the user in Stack; wins over everything. */
+  /** Name set by the user in DeepStack; wins over everything. */
   name?: string
   /** Name inherited from Claude Code (terminal title / session file). */
   autoName?: string

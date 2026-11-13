@@ -13,7 +13,7 @@ export interface SpawnOptions {
   initialInput?: string
 }
 
-// Vars that must not leak from the environment Stack was launched in. CLAUDE_CODE_* in
+// Vars that must not leak from the environment DeepStack was launched in. CLAUDE_CODE_* in
 // particular makes a child Claude think it is a sub-session and turns transcript saving off,
 // which silently breaks --resume.
 const STRIP = [/^CLAUDE/, /^ELECTRON_/, /^NODE_OPTIONS$/, /^VSCODE_/, /^TERM_PROGRAM/, /^ITERM_/, /^STACK_/]
@@ -41,7 +41,7 @@ export function buildSpawnSpec(session: SessionConfig, o: SpawnOptions): SpawnSp
   env.DISABLE_AUTO_UPDATE = 'true'
   env.DISABLE_UPDATE_PROMPT = 'true'
   env.SHELL = o.shell
-  // Hooks in ~/.claude/settings.json only report when these are set, i.e. inside Stack.
+  // Hooks in ~/.claude/settings.json only report when these are set, i.e. inside DeepStack.
   env.STACK_SID = session.id
   env.STACK_SOCK = o.hookSocket
   return {
@@ -76,7 +76,7 @@ export function claudeResumeFlags(args: string): string {
 }
 
 export interface ResumeOptions {
-  /** Stack's own hooks file, passed when the global hooks aren't installed. */
+  /** DeepStack's own hooks file, passed when the global hooks aren't installed. */
   hooksPath?: string
   transcriptExists: (sid: string) => boolean
 }

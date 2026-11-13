@@ -25,9 +25,9 @@ export function hookSocketPath(): string {
 }
 
 /**
- * Does nothing unless run inside a Stack terminal ($STACK_SOCK set). Prints nothing (stdout
+ * Does nothing unless run inside a DeepStack terminal ($STACK_SOCK set). Prints nothing (stdout
  * from SessionStart/UserPromptSubmit hooks is injected into Claude's context) and always
- * exits 0 so a stopped Stack never blocks Claude. Command hooks, because http hooks don't
+ * exits 0 so a stopped DeepStack never blocks Claude. Command hooks, because http hooks don't
  * fire for SessionStart.
  */
 export function hookCommand(ev: string): string {

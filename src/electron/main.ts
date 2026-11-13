@@ -1,4 +1,4 @@
-// Optional standalone window ("Launch standalone" setting). Just a viewer for the Stack
+// Optional standalone window ("Launch standalone" setting). Just a viewer for the DeepStack
 // server's UI; terminals live in the server, so closing this window loses nothing.
 import { app, BrowserWindow, screen, shell } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -7,7 +7,7 @@ import { join } from 'node:path'
 const url = process.argv.find((a) => a.startsWith('http://127.0.0.1:'))
 if (!url) app.exit(1)
 
-app.setName('Stack')
+app.setName('DeepStack')
 // The DeepStack logo as the Dock / taskbar icon (built into out/renderer from public/).
 const icon = join(__dirname, '..', 'renderer', 'icon-512.png')
 const boundsFile = () => join(app.getPath('userData'), 'window.json')
@@ -32,7 +32,7 @@ void app.whenReady().then(() => {
     minWidth: 720,
     minHeight: 420,
     backgroundColor: '#0d0e10',
-    title: 'Stack',
+    title: 'DeepStack',
     icon,
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false }
   })

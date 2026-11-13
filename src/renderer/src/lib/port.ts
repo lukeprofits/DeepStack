@@ -2,7 +2,7 @@ import { unpackMini } from '../../../shared/miniCodec'
 import type { ClientMsg, ServerMsg, Snapshot } from '../../../shared/protocol'
 import type { AppState, DeliverResult, Intent, SendOffEvent, SnapEvent } from '../../../shared/types'
 
-// One WebSocket to the Stack server carries everything: RPC, state broadcasts, terminal bytes
+// One WebSocket to the DeepStack server carries everything: RPC, state broadcasts, terminal bytes
 // and binary mini-terminal frames. It reconnects on its own; the server keeps all state, so a
 // dropped connection or a reloaded tab loses nothing.
 
