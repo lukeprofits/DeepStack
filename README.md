@@ -1,8 +1,9 @@
 <div align="center">
 
-<img src="src/renderer/public/icon-512.png" alt="DeepStack logo" width="140">
-
-# DeepStack
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/wordmark-dark.png">
+  <img src="docs/wordmark-light.png" alt="DeepStack" width="380">
+</picture>
 
 **The most convenient way to manage many Claude Code sessions at once.**
 
