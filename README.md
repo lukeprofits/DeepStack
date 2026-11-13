@@ -1,9 +1,20 @@
+<div align="center">
+
+<img src="src/renderer/public/icon-512.png" alt="DeepStack logo" width="140">
+
 # DeepStack
 
-**The most convenient way to manage many Claude Code sessions at once.** It's the
-ideal UI for prompt engineers: every session sits in a live stack on the left, the
-one you're working in is big on the right, and the moment you send a prompt it
-moves you to the next session that's ready for you.
+**The most convenient way to manage many Claude Code sessions at once.**
+
+The ideal UI for prompt engineers.
+
+</div>
+
+<br>
+
+Every session sits in a live stack on the left, the one you're working in is big on
+the right, and the moment you send a prompt DeepStack moves you to the next session
+that's ready for you.
 
 ```sh
 git clone https://github.com/lukeprofits/DeepStack && cd DeepStack && npm install && npm start
