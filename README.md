@@ -9,6 +9,10 @@
 
 The ideal UI for prompt engineers.
 
+<br>
+
+<img src="docs/screenshot.png" alt="DeepStack: a stack of live Claude Code sessions on the left, the active one big on the right" width="900">
+
 </div>
 
 <br>
