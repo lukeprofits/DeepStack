@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- DeepStack: a solid arrowhead drilling down into slanted layers that narrow and fade with
+       depth, on a dark tile so it reads on light and dark tab bars alike. -->
+  <rect width="24" height="24" rx="6" fill="#0e1510"/>
+  <g transform="translate(2.9 2.6) scale(.76)" fill="none" stroke="#a3e635" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.6 4.6 12 9 20.4 4.6V6.6L12 11 3.6 6.6Z" fill="#a3e635" stroke-width="1.5"/>
+    <path d="M6.2 14.6 12 17.6 17.8 14.6" stroke-width="2" opacity=".6"/>
+    <path d="M8.8 19.6 12 21.2 15.2 19.6" stroke-width="1.8" opacity=".3"/>
+  </g>
+</svg>

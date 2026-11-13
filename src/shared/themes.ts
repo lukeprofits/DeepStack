@@ -1,0 +1,242 @@
+import type { Settings, Theme } from './types'
+
+const sans = '"Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif'
+const mono = '"JetBrains Mono", "SF Mono", Menlo, Monaco, monospace'
+
+export const BUILT_IN_THEMES: Theme[] = [
+  {
+    id: 'phosphor',
+    name: 'Phosphor',
+    builtIn: true,
+    crt: true,
+    ui: {
+      bg: '#07100a',
+      sidebar: '#050c07',
+      panel: '#0b1710',
+      border: '#15301e',
+      text: '#b6f5c6',
+      muted: '#4f8a60',
+      accent: '#4dff88',
+      bubble: '#123d22',
+      bubbleText: '#c8ffd6',
+      pill: '#0b1a10',
+      pillText: '#7fd99a',
+      font: sans,
+      monoFont: mono,
+      fontSize: 13
+    },
+    terminal: {
+      background: '#07100a',
+      foreground: '#7dff9e',
+      cursor: '#9dffb6',
+      cursorAccent: '#07100a',
+      selectionBackground: '#1d4a2b',
+      // Hues kept distinct (diffs, errors) but pulled toward the phosphor green.
+      black: '#0d1f13',
+      red: '#ff7a5c',
+      green: '#4dff88',
+      yellow: '#d6ff6b',
+      blue: '#5fd4c0',
+      magenta: '#b8e86b',
+      cyan: '#6bffd8',
+      white: '#a8f5bb',
+      brightBlack: '#3d6b4a',
+      brightRed: '#ff9c7f',
+      brightGreen: '#8affb0',
+      brightYellow: '#ecff9a',
+      brightBlue: '#8de8d8',
+      brightMagenta: '#d0f59a',
+      brightCyan: '#9dfff0',
+      brightWhite: '#e0ffe8'
+    }
+  },
+  {
+    id: 'quiet-dark',
+    name: 'Plain',
+    builtIn: true,
+    ui: {
+      bg: '#0d0e10',
+      sidebar: '#0a0b0d',
+      panel: '#121316',
+      border: '#1f2125',
+      text: '#d7d9de',
+      muted: '#6b6f78',
+      accent: '#8ab4ff',
+      bubble: '#1e3a5f',
+      bubbleText: '#e6eefb',
+      pill: '#17181b',
+      pillText: '#a4a8b1',
+      font: sans,
+      monoFont: mono,
+      fontSize: 13
+    },
+    terminal: {
+      background: '#0d0e10',
+      foreground: '#d7d9de',
+      cursor: '#d7d9de',
+      selectionBackground: '#2a3a55',
+      black: '#1d1f21',
+      red: '#e06c75',
+      green: '#98c379',
+      yellow: '#e5c07b',
+      blue: '#61afef',
+      magenta: '#c678dd',
+      cyan: '#56b6c2',
+      white: '#d7dae0',
+      brightBlack: '#5c6370',
+      brightRed: '#ff7b86',
+      brightGreen: '#b5e890',
+      brightYellow: '#ffd68a',
+      brightBlue: '#82c4ff',
+      brightMagenta: '#de9bff',
+      brightCyan: '#7fd8e3',
+      brightWhite: '#ffffff'
+    }
+  },
+  {
+    id: 'graphite',
+    name: 'Graphite',
+    builtIn: true,
+    ui: {
+      bg: '#1a1b1e',
+      sidebar: '#151619',
+      panel: '#202125',
+      border: '#2c2e33',
+      text: '#e2e3e6',
+      muted: '#7c808a',
+      accent: '#c9d1d9',
+      bubble: '#33363d',
+      bubbleText: '#f0f1f3',
+      pill: '#222428',
+      pillText: '#b0b4bc',
+      font: sans,
+      monoFont: mono,
+      fontSize: 13
+    },
+    terminal: {
+      background: '#1a1b1e',
+      foreground: '#e2e3e6',
+      cursor: '#e2e3e6',
+      selectionBackground: '#3a3d44',
+      black: '#2a2c30',
+      red: '#f28b82',
+      green: '#a8d8a0',
+      yellow: '#f2d28a',
+      blue: '#8ab4f8',
+      magenta: '#d7aefb',
+      cyan: '#78d9ec',
+      white: '#e2e3e6',
+      brightBlack: '#6e7380',
+      brightRed: '#ffa69e',
+      brightGreen: '#c3ecbb',
+      brightYellow: '#ffe3a8',
+      brightBlue: '#a9c8ff',
+      brightMagenta: '#e6c7ff',
+      brightCyan: '#a0eaf7',
+      brightWhite: '#ffffff'
+    }
+  },
+  {
+    id: 'paper',
+    name: 'Paper',
+    builtIn: true,
+    ui: {
+      bg: '#fafaf8',
+      sidebar: '#f1f1ee',
+      panel: '#ffffff',
+      border: '#e2e2dd',
+      text: '#24262b',
+      muted: '#8a8d94',
+      accent: '#2f6fdf',
+      bubble: '#2f6fdf',
+      bubbleText: '#ffffff',
+      pill: '#ecece8',
+      pillText: '#4a4d55',
+      font: sans,
+      monoFont: mono,
+      fontSize: 13
+    },
+    terminal: {
+      background: '#fafaf8',
+      foreground: '#24262b',
+      cursor: '#24262b',
+      selectionBackground: '#cfe0ff',
+      black: '#24262b',
+      red: '#c4314b',
+      green: '#2b8a3e',
+      yellow: '#9a6700',
+      blue: '#1f5fbf',
+      magenta: '#8250df',
+      cyan: '#1b7c83',
+      white: '#d0d0cc',
+      brightBlack: '#6e7178',
+      brightRed: '#e0485f',
+      brightGreen: '#37a14b',
+      brightYellow: '#b57d00',
+      brightBlue: '#2f6fdf',
+      brightMagenta: '#9a6bef',
+      brightCyan: '#23939b',
+      brightWhite: '#ffffff'
+    }
+  },
+  {
+    id: 'synthwave',
+    name: 'Synthwave',
+    builtIn: true,
+    ui: {
+      bg: '#170a26',
+      sidebar: '#12071f',
+      panel: '#1f0f33',
+      border: '#3b1f5c',
+      text: '#f5e9ff',
+      muted: '#a083c4',
+      accent: '#ff3fa4',
+      bubble: '#ff3fa4',
+      bubbleText: '#1a0a2a',
+      pill: '#2a1446',
+      pillText: '#f0c6ff',
+      font: sans,
+      monoFont: mono,
+      fontSize: 13
+    },
+    terminal: {
+      background: '#170a26',
+      foreground: '#f5e9ff',
+      cursor: '#ff3fa4',
+      selectionBackground: '#4b2380',
+      black: '#2a1446',
+      red: '#ff5c8a',
+      green: '#72f1b8',
+      yellow: '#fede5d',
+      blue: '#36c5f4',
+      magenta: '#ff7edb',
+      cyan: '#03edf9',
+      white: '#f5e9ff',
+      brightBlack: '#7b5ea8',
+      brightRed: '#ff8aa9',
+      brightGreen: '#9cf7cf',
+      brightYellow: '#fff08f',
+      brightBlue: '#74d8ff',
+      brightMagenta: '#ffa8e8',
+      brightCyan: '#6ff6fc',
+      brightWhite: '#ffffff'
+    }
+  }
+]
+
+export const DEFAULT_SETTINGS: Settings = {
+  advanceMode: 'priority',
+  attentionFirst: true,
+  sendOffMs: 1000,
+  snapToHigher: false,
+  standalone: false,
+  bubbleClick: 'load',
+  pills: ['continue', 'yes', 'run the tests', 'do deep research on '],
+  themeId: 'phosphor',
+  scrollback: 1500,
+  miniHeight: 120
+}
+
+export function findTheme(id: string, custom: Theme[]): Theme {
+  return custom.find((t) => t.id === id) ?? BUILT_IN_THEMES.find((t) => t.id === id) ?? BUILT_IN_THEMES[0]
+}

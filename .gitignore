@@ -1,0 +1,9 @@
+node_modules
+out
+dist
+*.log
+.DS_Store
+
+# Local-only: private registry config and per-machine Claude settings
+.npmrc
+.claude/
