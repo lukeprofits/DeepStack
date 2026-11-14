@@ -81,11 +81,26 @@ const easeIn = cubicBezier(0.3, 0, 0.2, 1)
 
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p
 
+/**
+ * The part of the stack's scroll area where `el` can actually be seen: the scroll list, minus
+ * the "Parked" heading pinned over its bottom (which covers stack slots, never parked ones).
+ */
+function visibleBand(el: Element): { el: HTMLElement; top: number; bottom: number } | null {
+  const list = el.closest<HTMLElement>('.stack-list')
+  if (!list) return null
+  const r = list.getBoundingClientRect()
+  let bottom = r.bottom
+  const head = list.querySelector<HTMLElement>('.park-head')
+  if (head && !el.closest('.park-items')) bottom = Math.min(bottom, head.getBoundingClientRect().top)
+  return { el: list, top: r.top, bottom }
+}
+
 /** Keep the slot a window is flying home to inside the stack's scroll area. */
 function keepInView(slot: HTMLElement): void {
-  const list = slot.closest<HTMLElement>('.stack-list, .park-list')
-  if (!list) return
-  const l = list.getBoundingClientRect()
+  const band = visibleBand(slot)
+  if (!band) return
+  const list = band.el
+  const l = { top: band.top, bottom: band.bottom }
   const r = slot.getBoundingClientRect()
   if (r.bottom > l.bottom) list.scrollTop += Math.min(r.bottom - l.bottom, r.top - l.top)
   else if (r.top < l.top) list.scrollTop -= l.top - r.top
@@ -104,7 +119,7 @@ const DOT_CORE = 7
  */
 function markerCenter(id: string): { x: number; y: number; clipTop: number; clipBottom: number } | null {
   const dot = slotEl(id)?.querySelector<HTMLElement>('.slot-marker-dot')
-  const list = dot?.closest<HTMLElement>('.stack-list, .park-list')?.getBoundingClientRect()
+  const list = dot ? visibleBand(dot) : null
   const d = dot?.getBoundingClientRect()
   if (!d || !list || d.width === 0) return null
   const y = d.top + d.height / 2
@@ -117,7 +132,7 @@ function slotTarget(id: string): DOMRect | null {
   const slot = slotEl(id)
   if (!slot || slot.classList.contains('is-dragging')) return null
   const r = (slot.querySelector<HTMLElement>('.slot-body') ?? slot).getBoundingClientRect()
-  const list = slot.closest<HTMLElement>('.stack-list, .park-list')?.getBoundingClientRect()
+  const list = visibleBand(slot)
   if (r.width === 0 || !list) return null
   if (r.top < list.top - r.height / 2 || r.bottom > list.bottom + r.height / 2) return null
   return r
