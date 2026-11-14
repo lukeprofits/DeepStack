@@ -22,12 +22,21 @@ the right, and the moment you send a prompt DeepStack moves you to the next sess
 that's ready for you.
 
 ```sh
-git clone https://github.com/lukeprofits/DeepStack && cd DeepStack && npm install && npm start
+git clone https://github.com/lukeprofits/DeepStack && cd DeepStack && npm install && npm run link-cli && deepstack
 ```
 
 That builds it and opens it in a browser tab at `http://127.0.0.1:4777`. Your
-terminals live in a small local server, so closing or reloading the tab loses
-nothing. Run `npm start` again any time to get the tab back.
+terminals live in a small local server that runs in the background, so you can
+close the terminal you typed that in, and closing or reloading the tab loses
+nothing. Type `deepstack` again any time to get the tab back.
+
+```sh
+deepstack update    # pull the latest from GitHub, rebuild, offer to restart
+deepstack restart   # restart the server (your tab reconnects)
+deepstack stop      # stop the server and every terminal in it
+```
+
+`npm run link-cli` puts the `deepstack` command in `~/.local/bin`.
 
 > Early and moving fast. Built and used on macOS. Needs Node 22+ and Claude Code.
 

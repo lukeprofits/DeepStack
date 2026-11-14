@@ -12,7 +12,8 @@
     "dev": "node scripts/dev.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "postinstall": "node scripts/fix-spawn-helper.mjs"
+    "postinstall": "node scripts/fix-spawn-helper.mjs",
+    "link-cli": "node scripts/link-cli.mjs"
   },
   "dependencies": {
     "@xterm/addon-serialize": "^0.14.0",

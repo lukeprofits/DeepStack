@@ -1,0 +1,10 @@
+#!/bin/sh
+# `deepstack` on your PATH (see `npm run link-cli`). Runs from the repo so version managers
+# (asdf, mise, nvm's .nvmrc) pick the Node this project pins.
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case $link in /*) self=$link ;; *) self=$(dirname "$self")/$link ;; esac
+done
+cd "$(dirname "$self")/.." || exit 1
+exec node scripts/cli.mjs "$@"
