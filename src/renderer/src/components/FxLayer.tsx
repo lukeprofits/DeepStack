@@ -5,7 +5,7 @@ import { startOverlay, type Overlay } from '../fx/overlay'
 import { liftCurtain, whenFramesSteady } from '../lib/curtain'
 
 /** The theme's animated backdrop (only the Matrix theme has one). Sits behind the whole app. */
-export function FxLayer({ theme, intensity }: { theme: Theme; intensity: number }) {
+export function FxLayer({ theme, intensity, hackBanner }: { theme: Theme; intensity: number; hackBanner: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const over = useRef<HTMLCanvasElement>(null)
   const fx = useRef<MatrixFx | null>(null)
@@ -60,6 +60,22 @@ export function FxLayer({ theme, intensity }: { theme: Theme; intensity: number 
       </div>
       {/* Effects on top of the app (comets, sparks, reticle, boot); never over terminal text. */}
       <canvas ref={over} className="fx-over" aria-hidden />
+      {/* Movie-hacker banner: flickers on over everything while typing (driven by fx/matrix.ts). */}
+      {hackBanner && (
+        <div className="fx-hack" aria-hidden>
+          <div className="fx-hack-box">
+            <svg className="fx-hack-skull" viewBox="0 0 64 64">
+              <path
+                fillRule="evenodd"
+                d="M32 4C17 4 7 14 7 28c0 8 4 14 9 17v8a3 3 0 0 0 3 3h26a3 3 0 0 0 3-3v-8c5-3 9-9 9-17C57 14 47 4 32 4Z M15.5 30a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0 -13 0Z M35.5 30a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0 -13 0Z M32 38l-4 7h8Z"
+              />
+              <path d="M26 49v7M32 49v7M38 49v7" className="fx-hack-teeth" />
+            </svg>
+            <div className="fx-hack-text">HACKING...</div>
+            <div className="fx-hack-sub">BYPASSING MAINFRAME FIREWALL // ACCESS GRANTED</div>
+          </div>
+        </div>
+      )}
       {/* Typing "rip": jagged horizontal bands that slide the chrome apart (driven by fx/matrix.ts). */}
       <svg className="fx-defs" aria-hidden width="0" height="0">
         <filter id="fx-rip" x="-60%" y="0" width="220%" height="100%" colorInterpolationFilters="sRGB">

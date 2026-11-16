@@ -58,7 +58,8 @@ deepstack stop      # stop the server and every terminal in it
 - **Token-safe restore.** After a restart nothing runs until you open a session; Claude
   sessions come back with `claude --resume`, which spends no tokens until you send.
 - **Any program, not just Claude.** **+** opens a terminal in `~`. Run whatever you like.
-- **Themes.** Green phosphor CRT by default, plus Plain, Graphite, Paper and Synthwave,
+- **Themes.** 90s Hacker by default (animated circuitry, rain and glitches, with an optional
+  "HACKING..." banner while you type), plus Phosphor, Plain, Graphite, Paper and Synthwave,
   or make your own.
 
 ## How it works

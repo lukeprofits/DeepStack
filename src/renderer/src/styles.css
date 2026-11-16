@@ -3367,6 +3367,77 @@ textarea.json {
   pointer-events: none;
 }
 
+/* Movie-hacker banner over everything while typing (opacity set per frame by fx/matrix.ts). */
+.fx-hack {
+  /* Laid over the terminal frame (rect set by fx/matrix.ts), in its top part, clear of the prompt. */
+  position: fixed;
+  left: var(--hack-x, 0);
+  top: var(--hack-y, 0);
+  width: var(--hack-w, 100vw);
+  height: var(--hack-h, 100vh);
+  container-type: size;
+  z-index: 900;
+  display: grid;
+  place-items: start center;
+  padding-top: 9cqh;
+  pointer-events: none;
+  opacity: 0;
+  --hack: #ff2a2a;
+}
+
+.fx-hack-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 84cqw;
+  box-sizing: border-box;
+  gap: 1.2cqh;
+  padding: 3cqh 0 3.4cqh;
+  border: 4px solid var(--hack);
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 40, 40, 0.07) 0 2px, transparent 2px 4px),
+    rgba(18, 0, 0, 0.78);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.8),
+    0 0 40px rgba(255, 30, 30, 0.55),
+    inset 0 0 50px rgba(255, 30, 30, 0.25);
+  color: var(--hack);
+  font-family: var(--mono, ui-monospace, monospace);
+  text-transform: uppercase;
+}
+
+.fx-hack-skull {
+  width: clamp(44px, 11cqh, 110px);
+  height: auto;
+  fill: var(--hack);
+  filter: drop-shadow(0 0 14px rgba(255, 30, 30, 0.8));
+}
+
+.fx-hack-teeth {
+  fill: none;
+  stroke: rgb(18, 0, 0);
+  stroke-width: 2.2;
+}
+
+.fx-hack-text {
+  font-size: clamp(36px, 10.5cqw, 150px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-shadow:
+    0 0 12px rgba(255, 40, 40, 0.9),
+    0 0 46px rgba(255, 20, 20, 0.7),
+    4px 4px 0 rgba(0, 0, 0, 0.85);
+}
+
+.fx-hack-sub {
+  font-size: clamp(9px, 1.4cqw, 17px);
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: #ff8a8a;
+  text-shadow: 0 0 8px rgba(255, 40, 40, 0.8);
+}
+
 /* A title mid-decrypt: the real text hides, the scrambling copy shows in its place. */
 [data-fx='matrix'] .header-title,
 [data-fx='matrix'] .stack-wordmark {

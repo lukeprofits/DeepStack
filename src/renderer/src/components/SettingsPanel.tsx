@@ -292,7 +292,7 @@ function Appearance({ state }: { state: AppState }) {
       </div>
       {current.fx && (
         <Card title="Effects">
-          <SettingRow label="Animation" desc="The circuitry around the panels: data pulses, flicker and the occasional glitch. Off keeps it still. The terminals themselves are never covered.">
+          <SettingRow label="Animation" desc="The circuitry around the panels: data pulses, flicker and the occasional glitch. Off keeps it still.">
             <Slider
               label="Effects intensity"
               value={state.settings.fxIntensity ?? 0.6}
@@ -302,6 +302,9 @@ function Appearance({ state }: { state: AppState }) {
               onChange={(v) => set({ fxIntensity: v })}
               format={(v) => (v === 0 ? 'Off' : v < 0.4 ? 'Subtle' : v < 0.8 ? 'Lively' : 'Max')}
             />
+          </SettingRow>
+          <SettingRow label="HACKING... banner" desc="A giant red movie-hacker banner flashes over the terminal while you type.">
+            <Toggle label="HACKING... banner" checked={state.settings.hackBanner ?? false} onChange={(v) => set({ hackBanner: v })} />
           </SettingRow>
         </Card>
       )}

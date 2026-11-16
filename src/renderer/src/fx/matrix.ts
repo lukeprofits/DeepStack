@@ -1062,9 +1062,34 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   let ripAt = 0
   let tearsAt = 0
 
+  let hackEl: HTMLElement | null = null
+  let hackShown = '0.00'
+
+  /** The movie-hacker banner: flickers on while typing, gone as soon as the wave dies. */
+  function drawHack(): void {
+    // Re-found when it comes back (the setting can remove and re-add it).
+    if (!hackEl?.isConnected) {
+      hackEl = wave > 0.08 ? document.querySelector<HTMLElement>('.fx-hack') : null
+      hackShown = '0.00'
+    }
+    if (!hackEl) return
+    let o = 0
+    if (wave > 0.08) o = Math.min(1, wave * 1.8) * (rand() < 0.14 ? 0.2 : rand() < 0.1 ? 0.6 : 1)
+    const shown = o.toFixed(2)
+    if (shown === hackShown) return
+    if (o > 0 && hackShown === '0.00') {
+      // Fit it to the terminal frame each time it appears (cheap: once per burst).
+      const r = document.querySelector('.stage')?.getBoundingClientRect()
+      if (r) for (const [k, v] of [['x', r.left], ['y', r.top], ['w', r.width], ['h', r.height]] as const) hackEl.style.setProperty(`--hack-${k}`, `${Math.round(v)}px`)
+    }
+    hackShown = shown
+    hackEl.style.opacity = shown
+  }
+
   function drawWave(now: number, dt: number): void {
     // Snappy: dies off within ~half a second of the last key.
     wave *= Math.exp(-dt / 0.13)
+    drawHack()
     if (wave > 0.015 && staticLayer) {
       if (now >= tearsAt) {
         // New jagged tear pattern ~every 40ms: a few big rips, many small slips.

@@ -75,6 +75,8 @@ export interface Settings {
   miniHeight: number
   /** Animated theme effects (Matrix): 0 = still, 1 = maximum motion and glitch. */
   fxIntensity: number
+  /** Matrix: the big red "HACKING..." banner that flashes over the terminal while typing. */
+  hackBanner: boolean
 }
 
 export interface ThemeUi {

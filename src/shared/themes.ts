@@ -225,7 +225,7 @@ export const BUILT_IN_THEMES: Theme[] = [
   {
     // An animated circuit-board HUD around the terminals (see renderer/src/fx/matrix.ts).
     id: 'matrix',
-    name: 'Matrix',
+    name: '90s Hacker',
     builtIn: true,
     crt: true,
     fx: 'matrix',
@@ -285,7 +285,8 @@ export const DEFAULT_SETTINGS: Settings = {
   themeId: 'matrix',
   scrollback: 1500,
   miniHeight: 120,
-  fxIntensity: 0.6
+  fxIntensity: 0.6,
+  hackBanner: false
 }
 
 export function findTheme(id: string, custom: Theme[]): Theme {

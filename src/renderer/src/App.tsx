@@ -308,7 +308,7 @@ export function App() {
 
   return (
     <>
-    <FxLayer theme={theme} intensity={state.settings.fxIntensity ?? 0.6} />
+    <FxLayer theme={theme} intensity={state.settings.fxIntensity ?? 0.6} hackBanner={state.settings.hackBanner ?? false} />
     <div className={`app ${collapsed ? 'is-collapsed' : ''}`}>
       <Sidebar
         state={state}
