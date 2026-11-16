@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Theme } from '../../../shared/types'
 import { startMatrix, type MatrixFx } from '../fx/matrix'
 import { startOverlay, type Overlay } from '../fx/overlay'
+import { liftCurtain, whenFramesSteady } from '../lib/curtain'
 
 /** The theme's animated backdrop (only the Matrix theme has one). Sits behind the whole app. */
 export function FxLayer({ theme, intensity }: { theme: Theme; intensity: number }) {
@@ -15,7 +16,22 @@ export function FxLayer({ theme, intensity }: { theme: Theme; intensity: number 
     if (!on || !canvas.current) return
     fx.current = startMatrix(canvas.current, { intensity, accent: theme.ui.accent })
     if (over.current) fg.current = startOverlay(over.current, { intensity, accent: theme.ui.accent, onKey: () => fx.current?.burst() })
+    // Warm up under the curtain (fonts, the terminal attaching, first frames of every effect),
+    // then lift it and play the boot sequence on frames that are already smooth.
+    let cancelled = false
+    void (async () => {
+      await Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 1200))])
+      await new Promise((r) => setTimeout(r, 350))
+      await whenFramesSteady()
+      if (cancelled) return
+      fg.current?.begin()
+      // Lift only after the boot veil has painted, so no frame shows the app before the circle.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      if (cancelled) return
+      liftCurtain(false)
+    })()
     return () => {
+      cancelled = true
       fx.current?.stop()
       fg.current?.stop()
       fx.current = null

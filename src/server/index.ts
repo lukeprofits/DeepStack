@@ -1,10 +1,10 @@
 // DeepStack server: owns every terminal (through the pty host child process) and serves the UI
 // to a browser tab on 127.0.0.1. Closing the tab loses nothing; sessions live here.
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { APP_NAME } from '../shared/appName'
 import { Controller } from './controller'
 import { hookSocketPath, startHookServer, writeLocalHookSettings } from './hookServer'
@@ -77,6 +77,35 @@ function loadToken(): string {
   return token
 }
 
+/**
+ * macOS names a Dock icon after the app bundle, so a stock Electron shows up as "Electron".
+ * Keep a branded copy of Electron.app (an APFS clone: instant, no extra disk) whose Info.plist
+ * says DeepStack, re-signed ad hoc, and launch that. Rebuilt when Electron's version changes.
+ */
+function brandedElectron(binary: string): string {
+  if (process.platform !== 'darwin') return binary
+  try {
+    const src = resolve(dirname(binary), '..', '..')
+    if (!src.endsWith('.app')) return binary
+    const version = readFileSync(join(src, 'Contents', 'Info.plist'), 'utf8').match(/<key>CFBundleVersion<\/key>\s*<string>([^<]+)/)?.[1] ?? '?'
+    const app = join(dir, `${APP_NAME}.app`)
+    const stamp = join(dir, 'electron-app.version')
+    const out = join(app, 'Contents', 'MacOS', 'Electron')
+    if (existsSync(out) && existsSync(stamp) && readFileSync(stamp, 'utf8') === version) return out
+    rmSync(app, { recursive: true, force: true })
+    execFileSync('cp', ['-cR', src, app])
+    const plist = join(app, 'Contents', 'Info.plist')
+    for (const key of ['CFBundleName', 'CFBundleDisplayName']) execFileSync('plutil', ['-replace', key, '-string', APP_NAME, plist])
+    execFileSync('plutil', ['-replace', 'CFBundleIdentifier', '-string', 'com.lukeprofits.deepstack', plist])
+    execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'ignore' })
+    writeFileSync(stamp, version)
+    return out
+  } catch (e) {
+    console.error('could not brand the Electron app; the Dock will say Electron', e)
+    return binary
+  }
+}
+
 function openUi(url: string, standalone: boolean): void {
   if (noOpen) return
   if (standalone) {
@@ -86,7 +115,7 @@ function openUi(url: string, standalone: boolean): void {
       const electron = require('electron') as unknown as string
       const env = { ...process.env }
       delete env.ELECTRON_RUN_AS_NODE
-      const child = spawn(electron, [join(__dirname, '..', 'electron', 'main.js'), url], { detached: true, stdio: 'ignore', env })
+      const child = spawn(brandedElectron(electron), [join(__dirname, '..', 'electron', 'main.js'), url], { detached: true, stdio: 'ignore', env })
       child.unref()
       return
     } catch (e) {

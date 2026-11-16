@@ -13,6 +13,7 @@ import { focusMainTerminal, Stage, type Preview, type StageVisual } from './comp
 import { stack } from './lib/port'
 import { displayName, homeDir, setHome, setStackOrder, stackPosition } from './lib/session'
 import { applyTheme, sessionColor } from './lib/theme'
+import { liftCurtain } from './lib/curtain'
 
 /** Keystrokes are dropped this long after an automatic switch so typing can't spill over. */
 const SWITCH_GUARD_MS = 300
@@ -91,6 +92,13 @@ export function App() {
   useEffect(() => {
     if (theme) applyTheme(theme)
   }, [theme])
+  // Lift the launch curtain once the app has painted (Matrix lifts it itself, after warming up).
+  useEffect(() => {
+    if (theme && theme.fx !== 'matrix') requestAnimationFrame(() => requestAnimationFrame(() => liftCurtain()))
+  }, [theme])
+  useEffect(() => {
+    if (conn === 'denied' || conn === 'bye' || (conn === 'closed' && !state)) liftCurtain()
+  }, [conn, state])
 
   const activeId = state?.activeId ?? null
   const active = state?.sessions.find((s) => s.id === activeId)

@@ -35,6 +35,17 @@ interface Trace {
 const GLYPHS = 'ΑΒΓΔΘΛΞΠΣΦΨΩαβγδλμπσφψωアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン0123456789ABCDEF'
 const TAGS = ['ERR.958', 'SYS//LINK', 'SIGNAL // λόγος', '0x3F·A1', 'NODE 07', 'TRACE ∆', 'BUS.4', 'SYNC', 'PKT', 'MEM 0xA4']
 const GRID = 8
+/** Extra board drawn past each edge so parallax never reveals an edge. */
+const OVERSCAN = 140
+/** How far each depth travels (px) at full pointer deflection: further away moves less. */
+// Far things barely move, near things swing a long way: the spread is what reads as depth.
+const DEPTH = { far: 6, fog: 22, near: 34, bokehMin: 30, bokehMax: 125 }
+/** Raining code on three planes: far (small, dim, slow, nearly still), mid, near (big, bright, fast). */
+const RAIN_PLANES = [
+  { share: 0.22, size: 10, step: 11, alpha: 0.24, speed: 0.55, depth: 14, glow: false },
+  { share: 0.43, size: 14, step: 15, alpha: 0.75, speed: 1, depth: 52, glow: true },
+  { share: 0.35, size: 21, step: 22, alpha: 1, speed: 1.6, depth: 110, glow: true }
+]
 
 function rng(seed: number) {
   let a = seed >>> 0
@@ -88,6 +99,20 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   let H = 0
   let dpr = 1
   let staticLayer: HTMLCanvasElement | null = null
+  /** The blurred far board, drawn on its own so it can move less than the near one. */
+  let farLayer: HTMLCanvasElement | null = null
+  /** Floating fragments of circuit board, each at its own depth (sorted far to near). */
+  let pieces: { c: HTMLCanvasElement; x: number; y: number; rot: number; dpx: number; bob: number; per: number; ph: number }[] = []
+  /** Viewport size; W/H are the layer space, bigger by OVERSCAN on every side for parallax. */
+  let VW = 0
+  let VH = 0
+  // Parallax: the HUD stays put and the world behind it shifts with the pointer (plus a slow
+  // idle drift), each depth by its own amount. px/py run -1..1, eased toward the target.
+  let px = 0
+  let py = 0
+  let tx = 0
+  let ty = 0
+  let shadowAt = 0
   let bokeh: { x: number; y: number; r: number; v: number; a: number; ph: number }[] = []
   let bokehSprite: HTMLCanvasElement | null = null
   let traces: Trace[] = []
@@ -103,7 +128,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   let boost = 0
   let flickerDebt = 0
   let hubs: Pt[] = []
-  let rain: { x: number; y: number; v: number; len: number; chars: string[] }[] = []
+  let rain: { x: number; y: number; v: number; len: number; chars: string[]; z: number }[] = []
   let rings: { x: number; y: number; age: number }[] = []
   let sweepY = -1
   let nextSweep = 0
@@ -115,20 +140,298 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
 
   // ---------------------------------------------------------------- static layer
 
+  /** One broken fragment of circuit board: a chipped plate with its own traces, buses and chips. */
+  type Shape = 'shard' | 'ell' | 'strip' | 'fracture' | 'connector' | 'round' | 'chipped'
+  const SHAPES: Shape[] = ['shard', 'shard', 'ell', 'strip', 'fracture', 'fracture', 'connector', 'round', 'chipped']
+
+  /** A ragged break line from (x0,y0) to (x1,y1): what's left where a board snapped. */
+  function breakLine(path: Path2D, r: () => number, x0: number, y0: number, x1: number, y1: number, rough: number): void {
+    const n = 3 + Math.floor(r() * 5)
+    const nx = -(y1 - y0)
+    const ny = x1 - x0
+    const len = Math.hypot(nx, ny) || 1
+    for (let i = 1; i < n; i++) {
+      const t = i / n + (r() - 0.5) * (0.6 / n)
+      const off = (r() - 0.5) * 2 * rough
+      path.lineTo(x0 + (x1 - x0) * t + (nx / len) * off, y0 + (y1 - y0) * t + (ny / len) * off)
+    }
+    path.lineTo(x1, y1)
+  }
+
+  function shapePath(r: () => number, shape: Shape, w: number, h: number): Path2D {
+    const p = new Path2D()
+    const rough = Math.min(w, h) * 0.12
+    switch (shape) {
+      case 'shard': {
+        // A broken shard: an irregular polygon around an ellipse.
+        const n = 5 + Math.floor(r() * 5)
+        const start = r() * Math.PI * 2
+        for (let i = 0; i < n; i++) {
+          const a = start + (i / n) * Math.PI * 2 + (r() - 0.5) * (1.6 / n)
+          const k = 0.55 + r() * 0.45
+          const x = w / 2 + Math.cos(a) * (w / 2) * k
+          const y = h / 2 + Math.sin(a) * (h / 2) * k
+          if (i) p.lineTo(x, y)
+          else p.moveTo(x, y)
+        }
+        break
+      }
+      case 'ell': {
+        // An L: a full board with one corner block missing.
+        const cx = w * (0.4 + r() * 0.3)
+        const cy = h * (0.4 + r() * 0.3)
+        const corner = Math.floor(r() * 4)
+        const pts =
+          corner === 0 ? [[cx, 0], [w, 0], [w, h], [0, h], [0, cy], [cx, cy]]
+          : corner === 1 ? [[0, 0], [w - cx, 0], [w - cx, cy], [w, cy], [w, h], [0, h]]
+          : corner === 2 ? [[0, 0], [w, 0], [w, h - cy], [w - cx, h - cy], [w - cx, h], [0, h]]
+          : [[0, 0], [w, 0], [w, h], [cx, h], [cx, h - cy], [0, h - cy]]
+        pts.forEach(([x, y], i) => (i ? p.lineTo(x, y) : p.moveTo(x, y)))
+        break
+      }
+      case 'strip': {
+        // A long thin board snapped at both ends.
+        p.moveTo(0, 0)
+        p.lineTo(w, 0)
+        breakLine(p, r, w, 0, w - r() * 20, h, h * 0.3)
+        p.lineTo(0, h)
+        breakLine(p, r, 0, h, r() * 20, 0, h * 0.3)
+        break
+      }
+      case 'fracture': {
+        // A board with one or two edges broken off along a jagged line.
+        const top = r() < 0.5
+        const right = r() < 0.6
+        p.moveTo(0, 0)
+        if (top) breakLine(p, r, 0, 0, w, 0, rough)
+        else p.lineTo(w, 0)
+        if (right) breakLine(p, r, w, 0, w, h, rough)
+        else p.lineTo(w, h)
+        p.lineTo(0, h)
+        break
+      }
+      case 'connector': {
+        // An edge-connector card: a tab with gold-finger pads along the bottom.
+        const tab = w * (0.35 + r() * 0.35)
+        const tx = (w - tab) * r()
+        const th = 10 + r() * 8
+        p.moveTo(0, 0)
+        p.lineTo(w, 0)
+        p.lineTo(w, h - th)
+        p.lineTo(tx + tab, h - th)
+        p.lineTo(tx + tab, h)
+        p.lineTo(tx, h)
+        p.lineTo(tx, h - th)
+        p.lineTo(0, h - th)
+        break
+      }
+      case 'round': {
+        p.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2)
+        break
+      }
+      default: {
+        const cut = () => 6 + r() * 22
+        const [a1, a2, a3, a4] = [cut(), cut(), cut(), cut()]
+        p.moveTo(a1, 0)
+        p.lineTo(w - a2, 0)
+        p.lineTo(w, a2)
+        p.lineTo(w, h - a3)
+        p.lineTo(w - a3, h)
+        p.lineTo(a4, h)
+        p.lineTo(0, h - a4)
+        p.lineTo(0, a1)
+      }
+    }
+    p.closePath()
+    return p
+  }
+
+  function makePiece(r: () => number, z: number) {
+    const s = 0.6 + 0.9 * z
+    const shape = SHAPES[Math.floor(r() * SHAPES.length)]
+    // Sizes and proportions vary a lot: tiny chips of board to big slabs, long strips, discs.
+    const big = r() < 0.25 ? 1.6 : r() < 0.35 ? 0.55 : 1
+    let w = (120 + r() * 320) * big
+    let h = (80 + r() * 230) * big
+    if (shape === 'strip') {
+      w = (260 + r() * 360) * big
+      h = 34 + r() * 50
+    } else if (shape === 'round') h = w = (110 + r() * 200) * big
+    const b = 0.3 + 0.7 * z
+    // Depth of field focused up front: the farther a piece, the softer; near pieces are crisp.
+    const blur = z < 0.55 ? ((0.55 - z) / 0.55) * 4.5 : 0
+    const pad = 10 + blur * 3
+    const c = document.createElement('canvas')
+    c.width = Math.ceil((w * s + pad * 2) * dpr)
+    c.height = Math.ceil((h * s + pad * 2) * dpr)
+    const g = c.getContext('2d')!
+    g.setTransform(dpr * s, 0, 0, dpr * s, pad * dpr, pad * dpr)
+    g.lineCap = 'round'
+    g.lineJoin = 'round'
+    const plate = shapePath(r, shape, w, h)
+    g.fillStyle = col(0.03 + 0.05 * b)
+    g.fill(plate)
+    g.save()
+    g.clip(plate)
+    const snap = (v: number) => Math.round(v / GRID) * GRID
+    const n = Math.round((w * h) / 2200)
+    for (let i = 0; i < n; i++) {
+      let x = snap(r() * w)
+      let y = snap(r() * h)
+      g.strokeStyle = col((0.3 + 0.5 * r()) * b)
+      g.lineWidth = r() < 0.2 ? 1.7 : 1
+      g.beginPath()
+      g.moveTo(x, y)
+      let dir = Math.floor(r() * 4) * 2
+      for (let k = 0; k < 2 + Math.floor(r() * 5); k++) {
+        const len = (1 + Math.floor(r() * 6)) * GRID
+        x += DIRS[dir].x * len
+        y += DIRS[dir].y * len
+        g.lineTo(x, y)
+        if (r() < 0.5) dir = (dir + (r() < 0.5 ? 1 : 7)) % 8
+      }
+      g.stroke()
+      g.fillStyle = col(0.7 * b)
+      g.beginPath()
+      g.arc(x, y, 1.7, 0, Math.PI * 2)
+      g.fill()
+    }
+    // A bus bundle and a chip or two.
+    for (let i = 0; i < 1 + Math.floor(r() * 2); i++) {
+      const x0 = snap(r() * w * 0.7)
+      const y0 = snap(r() * h)
+      const len = 40 + r() * w * 0.5
+      g.strokeStyle = col(0.45 * b)
+      g.lineWidth = 1
+      for (let j = 0; j < 3 + Math.floor(r() * 4); j++) {
+        g.beginPath()
+        g.moveTo(x0, y0 + j * 4)
+        g.lineTo(x0 + len, y0 + j * 4)
+        g.lineTo(x0 + len + 14, y0 + j * 4 + 14)
+        g.stroke()
+      }
+    }
+    for (let i = 0; i < Math.floor(r() * 3); i++) {
+      const cw = 16 + Math.floor(r() * 4) * 6
+      const ch = 10 + Math.floor(r() * 3) * 6
+      const x = snap(r() * (w - cw))
+      const y = snap(r() * (h - ch))
+      g.fillStyle = 'rgba(2,8,5,0.95)'
+      g.fillRect(x, y, cw, ch)
+      g.strokeStyle = col(0.75 * b)
+      g.strokeRect(x + 0.5, y + 0.5, cw, ch)
+      for (let px = x + 3; px < x + cw - 1; px += 4) {
+        g.beginPath()
+        g.moveTo(px, y)
+        g.lineTo(px, y - 3)
+        g.moveTo(px, y + ch)
+        g.lineTo(px, y + ch + 3)
+        g.stroke()
+      }
+    }
+    if (r() < 0.45) {
+      g.font = '8px "JetBrains Mono", monospace'
+      g.fillStyle = col(0.5 * b)
+      g.fillText(`PCB-${Math.floor(r() * 0xffff).toString(16).toUpperCase().padStart(4, '0')}`, 8, h - 8)
+    }
+    g.restore()
+    // Its broken edge, brighter along the top like light catching it.
+    g.strokeStyle = col(0.4 * b)
+    g.lineWidth = 1
+    g.stroke(plate)
+    // Light catching the upper edges.
+    g.save()
+    g.beginPath()
+    g.rect(-4, -4, w + 8, h * 0.35 + 4)
+    g.clip()
+    g.strokeStyle = hot(0.35 * b)
+    g.stroke(plate)
+    g.restore()
+    if (shape === 'connector') {
+      // Gold-finger pads on the tab.
+      g.fillStyle = hot(0.45 * b)
+      g.save()
+      g.clip(plate)
+      for (let x = 0; x < w; x += 7) g.fillRect(x + 2, h - 9, 3, 7)
+      g.restore()
+    }
+
+    // Glow, then depth-of-field blur for the far and the very near pieces.
+    const out = document.createElement('canvas')
+    out.width = c.width
+    out.height = c.height
+    const o = out.getContext('2d')!
+    if (blur > 0) o.filter = `blur(${(blur * dpr).toFixed(1)}px)`
+    o.drawImage(c, 0, 0)
+    o.filter = `blur(${(3 * dpr).toFixed(1)}px)`
+    o.globalCompositeOperation = 'lighter'
+    o.globalAlpha = 0.6
+    o.drawImage(c, 0, 0)
+    return out
+  }
+
+  function buildPieces(r: () => number) {
+    const n = Math.round(18 + 10 * Math.min(2, (W * H) / 1e6))
+    const list = Array.from({ length: n }, () => {
+      const z = r()
+      return {
+        c: makePiece(r, z),
+        x: r() * W,
+        y: r() * H,
+        rot: (r() - 0.5) * (r() < 0.3 ? 1.1 : 0.3),
+        dpx: 4 + 126 * z,
+        bob: 2 + 6 * z,
+        per: 8000 + r() * 9000,
+        ph: r() * Math.PI * 2
+      }
+    })
+    // A cluster of near pieces down the left: the stack shows a lot of board between its
+    // thumbnails, so close fragments there make the depth obvious.
+    const side = document.querySelector('.sidebar')?.getBoundingClientRect().width ?? 300
+    for (let i = 0; i < 7; i++) {
+      const z = 0.72 + r() * 0.26
+      list.push({
+        c: makePiece(r, z),
+        x: OVERSCAN + r() * side,
+        y: OVERSCAN + ((i + r()) / 7) * (H - 2 * OVERSCAN),
+        rot: (r() - 0.5) * 0.3,
+        dpx: 4 + 126 * z,
+        bob: 2 + 6 * z,
+        per: 8000 + r() * 9000,
+        ph: r() * Math.PI * 2
+      })
+    }
+    return list.sort((a, b) => a.dpx - b.dpx)
+  }
+
+  /** Draw the pieces whose depth falls in [lo, hi), so they interleave with the rain planes. */
+  function drawPieces(now: number, lo: number, hi: number): void {
+    for (const p of pieces) {
+      if (p.dpx < lo || p.dpx >= hi) continue
+      const [ox, oy] = offset(p.dpx)
+      const by = Math.sin((now / p.per) * Math.PI * 2 + p.ph) * p.bob
+      ctx.setTransform(1, 0, 0, 1, ox + p.x * dpr, oy + (p.y + by) * dpr)
+      ctx.rotate(p.rot)
+      ctx.drawImage(p.c, -p.c.width / 2, -p.c.height / 2)
+    }
+  }
+
   function build(): void {
-    W = window.innerWidth
-    H = window.innerHeight
+    VW = window.innerWidth
+    VH = window.innerHeight
+    W = VW + 2 * OVERSCAN
+    H = VH + 2 * OVERSCAN
     dpr = Math.min(1.5, window.devicePixelRatio || 1)
-    canvas.width = Math.round(W * dpr)
-    canvas.height = Math.round(H * dpr)
-    canvas.style.width = `${W}px`
-    canvas.style.height = `${H}px`
+    canvas.width = Math.round(VW * dpr)
+    canvas.height = Math.round(VH * dpr)
+    canvas.style.width = `${VW}px`
+    canvas.style.height = `${VH}px`
 
     const r = rng(0x5eed ^ (W * 31 + H))
     const area = (W * H) / 1e6
     const off = document.createElement('canvas')
-    off.width = canvas.width
-    off.height = canvas.height
+    off.width = Math.round(W * dpr)
+    off.height = Math.round(H * dpr)
     const g = off.getContext('2d')!
     g.scale(dpr, dpr)
     g.lineCap = 'round'
@@ -165,12 +468,13 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
         }
         fg.stroke()
       }
-      g.save()
-      g.setTransform(1, 0, 0, 1, 0, 0)
-      g.filter = 'blur(2.5px)'
-      g.drawImage(far, 0, 0)
-      g.filter = 'none'
-      g.restore()
+      const blurred = document.createElement('canvas')
+      blurred.width = far.width
+      blurred.height = far.height
+      const bg = blurred.getContext('2d')!
+      bg.filter = 'blur(4px)'
+      bg.drawImage(far, 0, 0)
+      farLayer = blurred
     }
 
     // Circuit traces: grid-snapped polylines that bend by 45° now and then.
@@ -359,7 +663,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       mask.height = off.height
       const m = mask.getContext('2d')!
       m.scale(dpr, dpr)
-      m.fillStyle = 'rgba(0,0,0,0.42)'
+      m.fillStyle = 'rgba(0,0,0,0.16)'
       m.fillRect(0, 0, W, H)
       const blobs = 7 + Math.round(6 * area)
       for (let i = 0; i < blobs; i++) {
@@ -377,8 +681,15 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       g.globalCompositeOperation = 'destination-in'
       g.drawImage(mask, 0, 0)
       g.restore()
+      const fgc = farLayer?.getContext('2d')
+      if (fgc) {
+        fgc.globalCompositeOperation = 'destination-in'
+        fgc.drawImage(mask, 0, 0)
+        fgc.globalCompositeOperation = 'source-over'
+      }
     }
     staticLayer = off
+    pieces = buildPieces(r)
 
     if (!bokehSprite) {
       bokehSprite = document.createElement('canvas')
@@ -409,22 +720,27 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     rings = []
   }
 
-  const pulseTarget = () => Math.round(30 + 160 * intensity + boost)
+  const pulseTarget = () => Math.round(20 + 80 * intensity + boost)
 
   function newPulse(usable?: number[]): { tr: number; d: number; v: number } {
     const pool = usable ?? traces.map((t, i) => (t.len > 60 ? i : -1)).filter((i) => i >= 0)
     const tr = pool[Math.floor(rand() * pool.length)] ?? 0
-    return { tr, d: 0, v: 170 + rand() * 300 }
+    return { tr, d: 0, v: 70 + rand() * 120 }
   }
 
   // ---------------------------------------------------------------- live layer
 
   function frame(now: number, dt: number): void {
     if (!staticLayer) return
+    updateParallax(now, dt)
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(staticLayer, 0, 0)
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    drawFar()
+    drawPieces(now, 0, 14)
+    drawRain(dt, 0)
+    drawPieces(now, 14, DEPTH.near)
+    drawBase()
+    depth(DEPTH.near)
 
     // Pulses with fading trails.
     boost = Math.max(0, boost - dt * 50)
@@ -461,7 +777,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     }
 
     // Node flashes where pulses land, plus random flicker.
-    flickerDebt += dt * (3 + 14 * intensity)
+    flickerDebt += dt * (1 + 5 * intensity)
     for (; flickerDebt >= 1 && nodes.length; flickerDebt--) flashes.push({ ...nodes[Math.floor(rand() * nodes.length)], age: 0 })
     flashes = flashes.filter((f) => (f.age += dt) < 0.6)
     for (const f of flashes) {
@@ -479,7 +795,12 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     ctx.globalCompositeOperation = 'source-over'
 
     drawRings(now, dt)
-    drawRain(dt)
+    drawPieces(now, DEPTH.near, 52)
+    drawRain(dt, 1)
+    drawPieces(now, 52, 110)
+    drawRain(dt, 2)
+    drawPieces(now, 110, Infinity)
+    depth(DEPTH.near)
     drawSweep(now, dt)
     drawText(now, dt)
     drawAtmosphere(now, dt)
@@ -488,41 +809,52 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   }
 
   /** Falling columns of code. Heads are bright, tails fade; characters keep mutating. */
-  const RAIN_STEP = 15
-  const rainTarget = () => Math.round((W / RAIN_STEP) * (0.2 + 0.7 * intensity))
+  const rainTarget = () => Math.round((W / 15) * (0.2 + 0.6 * intensity))
   function newDrop(top: boolean) {
+    const roll = rand()
+    const z = roll < RAIN_PLANES[0].share ? 0 : roll < RAIN_PLANES[0].share + RAIN_PLANES[1].share ? 1 : 2
+    const pl = RAIN_PLANES[z]
     const len = 8 + Math.floor(rand() * 22)
     return {
-      x: Math.floor(rand() * (W / RAIN_STEP)) * RAIN_STEP + 4,
+      x: Math.floor(rand() * (W / pl.step)) * pl.step + 4,
       y: top ? -rand() * H * 0.6 : rand() * H,
-      v: 220 + rand() * 620,
+      v: (170 + rand() * 280) * pl.speed,
       len,
+      z,
       chars: Array.from({ length: len }, () => GLYPHS[Math.floor(rand() * GLYPHS.length)])
     }
   }
-  function drawRain(dt: number): void {
-    while (rain.length < rainTarget()) rain.push(newDrop(rain.length > 0))
-    if (rain.length > rainTarget()) rain.length = rainTarget()
-    ctx.font = '600 14px "JetBrains Mono", monospace'
+  function drawRain(dt: number, plane: number): void {
+    if (plane === 0) {
+      while (rain.length < rainTarget()) rain.push(newDrop(rain.length > 0))
+      if (rain.length > rainTarget()) rain.length = rainTarget()
+    }
     ctx.textBaseline = 'middle'
-    for (let i = 0; i < rain.length; i++) {
-      const d = rain[i]
-      d.y += d.v * dt
-      for (let k = 0; k < d.len; k++) {
-        const y = d.y - k * RAIN_STEP
-        if (y < -RAIN_STEP || y > H + RAIN_STEP) continue
-        if (rand() < dt * 1.2) d.chars[k] = GLYPHS[Math.floor(rand() * GLYPHS.length)]
-        const a = Math.pow(1 - k / d.len, 1.4) * 0.95
-        if (k === 0) {
-          ctx.fillStyle = col(0.16)
-          ctx.beginPath()
-          ctx.arc(d.x + 4, y, 9, 0, Math.PI * 2)
-          ctx.fill()
+    // One plane at a time, at its own parallax depth, so pieces can sit between planes.
+    for (let z = plane; z <= plane; z++) {
+      const pl = RAIN_PLANES[z]
+      depth(pl.depth)
+      ctx.font = `600 ${pl.size}px "JetBrains Mono", monospace`
+      for (let i = 0; i < rain.length; i++) {
+        const d = rain[i]
+        if (d.z !== z) continue
+        d.y += d.v * dt
+        for (let k = 0; k < d.len; k++) {
+          const y = d.y - k * pl.step
+          if (y < -pl.step || y > H + pl.step) continue
+          if (rand() < dt * 1.2) d.chars[k] = GLYPHS[Math.floor(rand() * GLYPHS.length)]
+          const a = Math.pow(1 - k / d.len, 1.4) * pl.alpha
+          if (k === 0 && pl.glow) {
+            ctx.fillStyle = col(0.16 * pl.alpha)
+            ctx.beginPath()
+            ctx.arc(d.x + pl.size * 0.3, y, pl.size * 0.65, 0, Math.PI * 2)
+            ctx.fill()
+          }
+          ctx.fillStyle = k === 0 ? `rgba(235,255,240,${pl.alpha})` : k < 3 ? hot(0.9 * pl.alpha) : col(a)
+          ctx.fillText(d.chars[k], d.x, y)
         }
-        ctx.fillStyle = k === 0 ? 'rgba(235,255,240,1)' : k < 3 ? hot(0.9) : col(a)
-        ctx.fillText(d.chars[k], d.x, y)
+        if (d.y - d.len * pl.step > H) rain[i] = newDrop(true)
       }
-      if (d.y - d.len * RAIN_STEP > H) rain[i] = newDrop(true)
     }
   }
 
@@ -538,6 +870,8 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
           b.x = rand() * W
         }
         ctx.globalAlpha = b.a * (0.6 + 0.4 * Math.sin(t * 0.9 + b.ph))
+        // Bigger (closer) lights move more.
+        depth(DEPTH.bokehMin + (DEPTH.bokehMax - DEPTH.bokehMin) * Math.min(1, b.r / 32))
         ctx.drawImage(bokehSprite, b.x - b.r, b.y - b.r, b.r * 2, b.r * 2)
       }
       ctx.globalAlpha = 1
@@ -545,13 +879,55 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     }
   }
 
+  /** Layer offset for a depth (px of travel at full pointer deflection), snapped to device px. */
+  function offset(k: number): [number, number] {
+    return [Math.round((-OVERSCAN - px * k) * dpr), Math.round((-OVERSCAN - py * k) * dpr)]
+  }
+  /** Draw in layer space at this depth. */
+  function depth(k: number): void {
+    const [ox, oy] = offset(k)
+    ctx.setTransform(dpr, 0, 0, dpr, ox, oy)
+  }
+  function drawFar(): void {
+    if (!farLayer) return
+    const [fx, fy] = offset(DEPTH.far)
+    ctx.setTransform(1, 0, 0, 1, fx, fy)
+    ctx.drawImage(farLayer, 0, 0)
+  }
+  /** The full board, kept dim and patchy: a base the pieces float over, not the main event. */
+  function drawBase(): void {
+    if (!staticLayer) return
+    const [nx, ny] = offset(DEPTH.near)
+    ctx.setTransform(1, 0, 0, 1, nx, ny)
+    ctx.globalAlpha = 0.55
+    ctx.drawImage(staticLayer, 0, 0)
+    ctx.globalAlpha = 1
+  }
+
+  function updateParallax(now: number, dt: number): void {
+    const t = now / 1000
+    // Idle drift keeps it breathing when the pointer is still.
+    const gx = tx + Math.sin(t / 9) * 0.1
+    const gy = ty + Math.cos(t / 11) * 0.08
+    // Tight follow (~35ms): locked to where you look, not floating after the mouse.
+    const k = 1 - Math.exp(-dt / 0.035)
+    px += (gx - px) * k
+    py += (gy - py) * k
+    // The haze layers (CSS) follow at their own depth.
+    if (now >= shadowAt) {
+      shadowAt = now + 16
+      const fog = `${(-px * DEPTH.fog).toFixed(1)}px ${(-py * DEPTH.fog).toFixed(1)}px`
+      for (const el of document.querySelectorAll<HTMLElement>('.fx-fog')) el.style.translate = fog
+    }
+  }
+
   /** Shockwave rings that pop out of the starburst hubs. */
   function drawRings(now: number, dt: number): void {
-    if (hubs.length && rand() < dt * (0.6 + 3 * intensity)) rings.push({ ...hubs[Math.floor(rand() * hubs.length)], age: 0 })
-    rings = rings.filter((r) => (r.age += dt) < 0.9)
+    if (hubs.length && rand() < dt * (0.2 + 0.8 * intensity)) rings.push({ ...hubs[Math.floor(rand() * hubs.length)], age: 0 })
+    rings = rings.filter((r) => (r.age += dt) < 2.2)
     ctx.lineWidth = 1.2
     for (const r of rings) {
-      const f = r.age / 0.9
+      const f = r.age / 2.2
       ctx.strokeStyle = col(0.55 * (1 - f))
       ctx.beginPath()
       ctx.arc(r.x, r.y, 6 + 150 * f, 0, Math.PI * 2)
@@ -565,11 +941,11 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     if (sweepY < 0) {
       if (now >= nextSweep) {
         if (nextSweep) sweepY = 0
-        nextSweep = now + (9000 - 6000 * intensity) * (0.7 + rand() * 0.6)
+        nextSweep = now + (16000 - 6000 * intensity) * (0.7 + rand() * 0.6)
       }
       return
     }
-    sweepY += (900 + 700 * intensity) * dt
+    sweepY += (260 + 160 * intensity) * dt
     const grad = ctx.createLinearGradient(0, sweepY - 60, 0, sweepY)
     grad.addColorStop(0, col(0))
     grad.addColorStop(1, col(0.16))
@@ -598,7 +974,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
         }, 120 + rand() * 160)
       }
     }
-    nextElGlitch = now + (9000 - 5000 * intensity) * (0.6 + rand() * 0.8)
+    nextElGlitch = now + (16000 - 6000 * intensity) * (0.6 + rand() * 0.8)
   }
 
   /** Scrambling glyphs and HUD readouts (also drawn once when the layer is still). */
@@ -606,14 +982,14 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     ctx.textBaseline = 'middle'
     const scramble = 0.02 + 0.08 * intensity
     for (const gl of glyphs) {
-      if (rand() < scramble * dt * 8) gl.ch = GLYPHS[Math.floor(rand() * GLYPHS.length)]
+      if (rand() < scramble * dt * 3) gl.ch = GLYPHS[Math.floor(rand() * GLYPHS.length)]
       ctx.font = `${gl.size}px "JetBrains Mono", monospace`
       ctx.fillStyle = col(gl.a)
       ctx.fillText(gl.ch, gl.x, gl.y)
     }
     ctx.font = '9px "JetBrains Mono", monospace'
     for (const t of tags) {
-      if (rand() < dt * (1 + 3 * intensity)) t.n = (t.n + 1 + Math.floor(rand() * 7)) % 1000
+      if (rand() < dt * (0.3 + 0.8 * intensity)) t.n = (t.n + 1 + Math.floor(rand() * 7)) % 1000
       const pct = (90 + (t.n % 100) / 10).toFixed(1)
       ctx.fillStyle = col(0.55)
       ctx.fillText(`${t.text} ${t.text.includes('//') || t.text === 'SYNC' ? pct + '%' : t.n.toString().padStart(3, '0')}`, t.x, t.y)
@@ -636,7 +1012,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       if (strips.length) strips = []
       if (intensity > 0 && !reduced && now >= nextGlitch) {
         if (nextGlitch) startGlitch(now)
-        nextGlitch = now + (11000 - 6000 * intensity) * (0.6 + rand() * 0.8)
+        nextGlitch = now + (18000 - 6000 * intensity) * (0.6 + rand() * 0.8)
       }
       return
     }
@@ -674,9 +1050,13 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     if (!staticLayer) return
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(staticLayer, 0, 0)
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    drawText(performance.now())
+    const now = performance.now()
+    drawFar()
+    drawPieces(now, 0, DEPTH.near)
+    drawBase()
+    drawPieces(now, DEPTH.near, Infinity)
+    depth(DEPTH.near)
+    drawText(now)
     drawAtmosphere(performance.now(), 0)
   }
 
@@ -708,6 +1088,16 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   build()
   run()
   window.addEventListener('resize', onResize)
+  const onPointer = (e: PointerEvent) => {
+    tx = Math.max(-1, Math.min(1, (e.clientX / Math.max(1, VW)) * 2 - 1))
+    ty = Math.max(-1, Math.min(1, (e.clientY / Math.max(1, VH)) * 2 - 1))
+  }
+  const onLeave = () => {
+    tx = 0
+    ty = 0
+  }
+  window.addEventListener('pointermove', onPointer, { passive: true })
+  document.documentElement.addEventListener('pointerleave', onLeave)
   document.addEventListener('visibilitychange', onVisibility)
 
   return {
@@ -719,7 +1109,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     burst() {
       if (intensity <= 0 || reduced) return
       boost = Math.min(160, boost + 14)
-      for (let i = 0; i < 10; i++) pulses.push({ ...newPulse(), v: 600 + rand() * 600 })
+      for (let i = 0; i < 10; i++) pulses.push({ ...newPulse(), v: 200 + rand() * 160 })
       if (hubs.length && rand() < 0.5) rings.push({ ...hubs[Math.floor(rand() * hubs.length)], age: 0 })
     },
     stop() {
@@ -727,6 +1117,11 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       cancelAnimationFrame(raf)
       window.clearTimeout(resizeTimer)
       window.removeEventListener('resize', onResize)
+      window.removeEventListener('pointermove', onPointer)
+      document.documentElement.removeEventListener('pointerleave', onLeave)
+      document.documentElement.style.removeProperty('--hud-sx')
+      document.documentElement.style.removeProperty('--hud-sy')
+      for (const el of document.querySelectorAll<HTMLElement>('.fx-fog')) el.style.translate = ''
       document.removeEventListener('visibilitychange', onVisibility)
       for (const el of glitched) el.classList.remove('fx-glitch-el')
       glitched.clear()

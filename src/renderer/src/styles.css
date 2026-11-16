@@ -1243,12 +1243,12 @@ textarea.json {
 /* Three arcs inside, four outside: dash + gap = circumference / count. */
 .slot-connector .reticle-ring.is-inner {
   stroke-dasharray: 22.1 13.5;
-  animation: reticle-spin 6s linear infinite;
+  animation: reticle-spin 10s linear infinite;
 }
 
 .slot-connector .reticle-ring.is-outer {
   stroke-dasharray: 23.4 14.3;
-  animation: reticle-spin 9s linear infinite reverse;
+  animation: reticle-spin 16s linear infinite reverse;
 }
 
 .slot-connector .reticle-ticks path {
@@ -1256,7 +1256,7 @@ textarea.json {
 }
 
 .slot-connector .reticle-ticks {
-  animation: reticle-breathe 2.4s ease-in-out infinite;
+  animation: reticle-breathe 4s ease-in-out infinite;
 }
 
 @keyframes reticle-spin {
@@ -3147,7 +3147,9 @@ textarea.json {
   border-bottom-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-[data-fx='matrix'] .park-head {
+/* The Parked heading and its open drawer: one solid, dark panel. */
+[data-fx='matrix'] .park-head,
+[data-fx='matrix'] .park-items {
   background: rgba(1, 6, 3, 0.9);
 }
 
@@ -3427,7 +3429,7 @@ textarea.json {
   opacity: 0.11;
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  animation: fx-grain 0.6s steps(6) infinite;
+  animation: fx-grain 1.6s steps(6) infinite;
   will-change: transform;
 }
 
@@ -3503,4 +3505,16 @@ textarea.json {
 
 [data-fx='matrix'] .stage.is-switching::after {
   opacity: 0;
+}
+
+/* Parked is one solid, edge-to-edge panel in Matrix: the open drawer spans the sidebar's full
+   width like its heading, and a closed heading fills everything below it to the window edge. */
+[data-fx='matrix'] .park-items {
+  /* Pulled up over the stack's 10px row gap so no strip of board shows between the two. */
+  margin: -10px -12px 0;
+  padding: 10px 12px 0;
+}
+
+[data-fx='matrix'] .park-head:not(.is-open) {
+  box-shadow: 0 120px 0 0 rgba(1, 6, 3, 0.9);
 }

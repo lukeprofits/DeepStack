@@ -101,6 +101,35 @@ export const TerminalLayer = forwardRef<TerminalLayerHandle, Props>(function Ter
     // keys go to the shell, and the browser's page shortcuts (print, find, save, address bar…)
     // are swallowed. ⌘C/⌘V/⌘X/⌘A stay native for copy/paste; ⌘K is handled by the app.
     // Chrome never lets a page have ⌘W/⌘T/⌘N/⌘Q/⌘Tab, so those still belong to the browser.
+    // Scrolling inside an app that reports the mouse (Claude Code runs full-screen with it on):
+    // xterm damps small pixel deltas to 30%, so a trackpad swipe barely scrolls. Report one wheel
+    // step per row of finger travel instead, like a native terminal, in the app's encoding.
+    let wheelRows = 0
+    term.attachCustomWheelEventHandler((e) => {
+      const core = (term as unknown as { _core?: { coreMouseService?: { areMouseEventsActive?: boolean; activeEncoding?: string } } })._core
+      const mouse = core?.coreMouseService
+      if (!mouse?.areMouseEventsActive || e.deltaY === 0 || e.shiftKey) return true
+      const id = attach.current.id
+      const screen = hostRef.current?.querySelector('.xterm-screen')?.getBoundingClientRect()
+      if (!id || !screen || !live.current.interactive) return true
+      const cellH = screen.height / term.rows
+      const cellW = screen.width / term.cols
+      wheelRows += e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? e.deltaY * term.rows : e.deltaY / cellH
+      const steps = Math.trunc(wheelRows)
+      e.preventDefault()
+      if (!steps) return false
+      wheelRows -= steps
+      const col = Math.max(1, Math.min(term.cols, Math.floor((e.clientX - screen.left) / cellW) + 1))
+      const row = Math.max(1, Math.min(term.rows, Math.floor((e.clientY - screen.top) / cellH) + 1))
+      const btn = steps < 0 ? 64 : 65
+      const one =
+        mouse.activeEncoding === 'SGR' || mouse.activeEncoding === 'SGR_PIXELS'
+          ? `\x1b[<${btn};${col};${row}M`
+          : `\x1b[M${String.fromCharCode(32 + btn, 32 + Math.min(col, 223), 32 + Math.min(row, 223))}`
+      port.send({ t: 'input', id, data: one.repeat(Math.min(40, Math.abs(steps))) })
+      return false
+    })
+
     term.attachCustomKeyEventHandler((e) => {
       if (!e.metaKey || e.ctrlKey || e.altKey) return true
       const id = attach.current.id

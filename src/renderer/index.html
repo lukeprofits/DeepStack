@@ -8,7 +8,9 @@
     <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png?v=5" />
     <link rel="apple-touch-icon" href="./icon-512.png?v=5" />
   </head>
-  <body>
+  <body style="margin:0;background:#010402">
+    <!-- Covers the page until the app is ready to show (src/lib/curtain.ts). -->
+    <div id="boot-curtain" style="position:fixed;inset:0;z-index:2147483647;background:#010402;transition:opacity 0.25s ease"></div>
     <div id="root"></div>
     <script type="module" src="./src/main.tsx"></script>
   </body>
