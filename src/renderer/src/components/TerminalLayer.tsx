@@ -97,6 +97,32 @@ export const TerminalLayer = forwardRef<TerminalLayerHandle, Props>(function Ter
     termRef.current = term
     fitRef.current = fit
 
+    // Behave like a Mac terminal, not a web page, while the terminal has focus: ⌘ line-editing
+    // keys go to the shell, and the browser's page shortcuts (print, find, save, address bar…)
+    // are swallowed. ⌘C/⌘V/⌘X/⌘A stay native for copy/paste; ⌘K is handled by the app.
+    // Chrome never lets a page have ⌘W/⌘T/⌘N/⌘Q/⌘Tab, so those still belong to the browser.
+    term.attachCustomKeyEventHandler((e) => {
+      if (!e.metaKey || e.ctrlKey || e.altKey) return true
+      const id = attach.current.id
+      const send = (data: string) => {
+        if (e.type === 'keydown' && id && live.current.interactive && Date.now() >= live.current.inputBlockedUntil) port.send({ t: 'input', id, data })
+        e.preventDefault()
+        return false
+      }
+      if (!e.shiftKey) {
+        if (e.key === 'ArrowLeft') return send('\x01') // start of line
+        if (e.key === 'ArrowRight') return send('\x05') // end of line
+        if (e.key === 'Backspace') return send('\x15') // delete to start of line
+      }
+      if (['c', 'v', 'x', 'a', 'k'].includes(e.key.toLowerCase())) return true
+      // Letters and punctuation only: ⌘1–9 (tabs) and ⌘+/−/0 (zoom, like a font-size change) stay with the browser.
+      if (/^[a-z,./;'[\]]$/i.test(e.key)) {
+        e.preventDefault()
+        return false
+      }
+      return true
+    })
+
     term.onData((data) => {
       const id = attach.current.id
       if (!id) return
@@ -155,6 +181,12 @@ export const TerminalLayer = forwardRef<TerminalLayerHandle, Props>(function Ter
       }
     })
 
+    // ⌘K (App dispatches it): clear what this view shows; the host clears its mirror too.
+    const onClear = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === attach.current.id) term.clear()
+    }
+    window.addEventListener('deepstack:clear', onClear)
+
     let resizeTimer = 0
     const ro = new ResizeObserver(() => {
       window.clearTimeout(resizeTimer)
@@ -171,6 +203,7 @@ export const TerminalLayer = forwardRef<TerminalLayerHandle, Props>(function Ter
 
     return () => {
       off()
+      window.removeEventListener('deepstack:clear', onClear)
       ro.disconnect()
       if (attach.current.id) port.send({ t: 'detach', id: attach.current.id })
       term.dispose()

@@ -614,6 +614,12 @@ export class Controller {
         this.spawn(i.id)
         this.changed()
         return
+      case 'clearTerminal':
+        // Clear the mirror and history, then Ctrl+L so the shell (or Claude) redraws at the top.
+        if (!this.session(i.id) || !this.state.runtime[i.id] || ['dormant', 'exited', 'error'].includes(this.state.runtime[i.id].phase)) return
+        this.deps.host({ t: 'clear', id: i.id })
+        setTimeout(() => this.deps.host({ t: 'write', id: i.id, data: '\x0c' }), 30)
+        return
       case 'rename': {
         const s = this.session(i.id)
         if (s) s.name = i.name.trim() || undefined

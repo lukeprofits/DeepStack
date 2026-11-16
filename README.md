@@ -77,6 +77,7 @@ Ctrl+Shift, because the browser keeps ⌘W / ⌘N / ⌘1–9 and plain Ctrl belo
 
 | Keys | Action |
 |---|---|
+| ⌘K | Clear the terminal (like iTerm / Terminal.app) |
 | ⌃⇧N | New terminal |
 | ⌃⇧W | Close session (asks first) |
 | ⌃⇧J | Jump to the next ready session |

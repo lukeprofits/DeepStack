@@ -29,6 +29,8 @@ void app.whenReady().then(() => {
     height: saved?.height ?? Math.min(1000, area.height),
     x: saved?.x,
     y: saved?.y,
+    // Opens fullscreen; leaving fullscreen falls back to the saved window size.
+    fullscreen: true,
     minWidth: 720,
     minHeight: 420,
     backgroundColor: '#0d0e10',

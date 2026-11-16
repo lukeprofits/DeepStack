@@ -166,6 +166,12 @@ export class HostSession {
     return replayHistory(this.history.read(), this.term.cols, this.term.rows, lines)
   }
 
+  /** ⌘K: drop the scrollback and on-disk history; the prompt line becomes the first line. */
+  clear(): void {
+    this.term.clear()
+    this.history.remove()
+  }
+
   kill(): void {
     if (this.dead) return
     // Hang up the whole process group so Claude (a child of the shell) goes too.

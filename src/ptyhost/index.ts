@@ -78,6 +78,9 @@ function onControl(msg: HostControl): void {
     case 'write':
       s?.write(msg.data)
       break
+    case 'clear':
+      s?.clear()
+      break
     case 'resize':
       resizeAll(msg.cols, msg.rows, msg.activeId)
       break

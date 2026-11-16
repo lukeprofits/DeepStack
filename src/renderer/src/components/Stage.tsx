@@ -234,10 +234,12 @@ export function Stage(props: Props) {
           `H${Math.max(ex + r, endX)}`
       }
       path.setAttribute('d', dAttr)
-      for (const c of svg.querySelectorAll('circle')) {
+      for (const c of svg.querySelectorAll(':scope > circle')) {
         c.setAttribute('cx', String(d.x))
         c.setAttribute('cy', String(d.y))
       }
+      // The reticle lives in the same SVG and moves in the same write, so it can't drift off the dot.
+      svg.querySelector('.tether-reticle')?.setAttribute('transform', `translate(${d.x} ${d.y})`)
       // Clip to the band the stack scrolls in: the dot and line slide under the header (or the
       // parked drawer) instead of drawing over it.
       svg.style.clipPath = `inset(${d.clipTop}px 0 ${Math.max(0, window.innerHeight - d.clipBottom)}px 0)`
@@ -545,6 +547,14 @@ export function Stage(props: Props) {
         <path />
         <circle className="tether-halo" r="11" />
         <circle className="tether-dot" r="7" />
+        {/* Targeting reticle: two broken rings turning opposite ways, and breathing corner ticks. */}
+        <g className="tether-reticle">
+          <circle className="reticle-ring is-inner" r="17" />
+          <circle className="reticle-ring is-outer" r="24" />
+          <g className="reticle-ticks">
+            <path d="M19.8 19.8l3.5 3.5M-19.8 19.8l-3.5 3.5M19.8 -19.8l3.5 -3.5M-19.8 -19.8l-3.5 -3.5" />
+          </g>
+        </g>
       </svg>
       <svg className="slot-connector is-out" ref={connectorOutRef} aria-hidden>
         <path />

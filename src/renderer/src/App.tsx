@@ -7,6 +7,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { SettingsPanel, type Section } from './components/SettingsPanel'
 import { GearIcon } from './components/icons'
 import { HeaderTitle } from './components/HeaderTitle'
+import { FxLayer } from './components/FxLayer'
 import { Sidebar } from './components/Sidebar'
 import { focusMainTerminal, Stage, type Preview, type StageVisual } from './components/Stage'
 import { stack } from './lib/port'
@@ -177,6 +178,19 @@ export function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       // Typing a session name: every key belongs to that field.
       if ((e.target as HTMLElement | null)?.closest?.('.header-title-input')) return
+      // ⌘K clears the terminal, like iTerm and Terminal.app (not while typing in an app field).
+      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        const t = e.target as HTMLElement | null
+        const inField = !!t && (t.tagName === 'INPUT' || (t.tagName === 'TEXTAREA' && !t.classList.contains('xterm-helper-textarea')))
+        const id = stateRef.current?.activeId
+        if (!inField && id) {
+          e.preventDefault()
+          e.stopPropagation()
+          window.dispatchEvent(new CustomEvent('deepstack:clear', { detail: id }))
+          void stack.intent({ t: 'clearTerminal', id })
+          return
+        }
+      }
       const cmd = shortcut(e)
       if (cmd) {
         e.preventDefault()
@@ -272,6 +286,8 @@ export function App() {
   const previewTarget = preview ? state.sessions.find((s) => s.id === preview.to) : undefined
 
   return (
+    <>
+    <FxLayer theme={theme} intensity={state.settings.fxIntensity ?? 0.6} />
     <div className={`app ${collapsed ? 'is-collapsed' : ''}`}>
       <Sidebar
         state={state}
@@ -420,5 +436,6 @@ export function App() {
         />
       )}
     </div>
+    </>
   )
 }

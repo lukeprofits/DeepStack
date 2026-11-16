@@ -27,6 +27,8 @@ export type HostControl =
   | { t: 'kill'; id: string }
   | { t: 'forget'; id: string }
   | { t: 'write'; id: string; data: string }
+  /** Wipe the screen mirror and on-disk history (⌘K). */
+  | { t: 'clear'; id: string }
   | { t: 'resize'; cols: number; rows: number; activeId: string | null }
   /** Sessions some browser is currently viewing (they answer terminal queries themselves). */
   | { t: 'watched'; ids: string[] }

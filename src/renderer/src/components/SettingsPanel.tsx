@@ -290,6 +290,21 @@ function Appearance({ state }: { state: AppState }) {
           </button>
         ))}
       </div>
+      {current.fx && (
+        <Card title="Effects">
+          <SettingRow label="Animation" desc="The circuitry around the panels: data pulses, flicker and the occasional glitch. Off keeps it still. The terminals themselves are never covered.">
+            <Slider
+              label="Effects intensity"
+              value={state.settings.fxIntensity ?? 0.6}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => set({ fxIntensity: v })}
+              format={(v) => (v === 0 ? 'Off' : v < 0.4 ? 'Subtle' : v < 0.8 ? 'Lively' : 'Max')}
+            />
+          </SettingRow>
+        </Card>
+      )}
       <div className="sx-actions">
         <button className="sx-btn" onClick={() => duplicate(current)}>
           Duplicate

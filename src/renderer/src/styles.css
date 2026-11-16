@@ -1225,6 +1225,63 @@ textarea.json {
   fill: color-mix(in srgb, var(--c) 18%, transparent);
 }
 
+/* Targeting reticle around the active session's dot (every theme). */
+.slot-connector .tether-reticle {
+  fill: none;
+  stroke: color-mix(in srgb, var(--c) 85%, transparent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 70%, transparent));
+}
+
+.slot-connector .reticle-ring,
+.slot-connector .reticle-ticks {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Three arcs inside, four outside: dash + gap = circumference / count. */
+.slot-connector .reticle-ring.is-inner {
+  stroke-dasharray: 22.1 13.5;
+  animation: reticle-spin 6s linear infinite;
+}
+
+.slot-connector .reticle-ring.is-outer {
+  stroke-dasharray: 23.4 14.3;
+  animation: reticle-spin 9s linear infinite reverse;
+}
+
+.slot-connector .reticle-ticks path {
+  stroke-width: 1.2;
+}
+
+.slot-connector .reticle-ticks {
+  animation: reticle-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes reticle-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes reticle-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.09);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-connector .reticle-ring,
+  .slot-connector .reticle-ticks {
+    animation: none;
+  }
+}
+
 /* ------------------------------------------------------------------ stage (big terminal) */
 
 .stage {
@@ -3054,4 +3111,396 @@ textarea.json {
 
 .bb-hint + .bb-add {
   margin-left: 4px;
+}
+
+/* ------------------------------------------------------------------ Matrix theme (HUD) */
+
+/* The circuit-board backdrop (fx/matrix.ts), behind everything. */
+.fx-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+[data-fx='matrix'] .app {
+  position: relative;
+  z-index: 1;
+}
+
+/* See-through chrome so the circuitry shows around the panels... */
+[data-fx='matrix'] body {
+  background: #010402;
+}
+
+[data-fx='matrix'] .sidebar {
+  background: linear-gradient(to right, rgba(1, 6, 3, 0.5), rgba(1, 6, 3, 0.25));
+  border-right-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+[data-fx='matrix'] .main,
+[data-fx='matrix'] .header {
+  background: transparent;
+}
+
+[data-fx='matrix'] .header {
+  border-bottom-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+[data-fx='matrix'] .park-head {
+  background: rgba(1, 6, 3, 0.9);
+}
+
+/* ...while every reading surface stays solid: code is never drawn over circuitry. */
+[data-fx='matrix'] .stage,
+[data-fx='matrix'] .mini,
+[data-fx='matrix'] .flight-plate {
+  background: var(--term-bg);
+}
+
+[data-fx='matrix'] .bb-card {
+  background: rgba(2, 8, 4, 0.94);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* HUD corner brackets on the big terminal and the cards. */
+[data-fx='matrix'] .stage::before,
+[data-fx='matrix'] .bb-card::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+  z-index: 30;
+  --b: color-mix(in srgb, var(--accent) 75%, transparent);
+  background:
+    linear-gradient(var(--b), var(--b)) top left / 14px 2px,
+    linear-gradient(var(--b), var(--b)) top left / 2px 14px,
+    linear-gradient(var(--b), var(--b)) top right / 14px 2px,
+    linear-gradient(var(--b), var(--b)) top right / 2px 14px,
+    linear-gradient(var(--b), var(--b)) bottom left / 14px 2px,
+    linear-gradient(var(--b), var(--b)) bottom left / 2px 14px,
+    linear-gradient(var(--b), var(--b)) bottom right / 14px 2px,
+    linear-gradient(var(--b), var(--b)) bottom right / 2px 14px;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+
+[data-fx='matrix'] .bb-card {
+  position: relative;
+  overflow: visible;
+}
+
+[data-fx='matrix'] .bb-card::before {
+  inset: -4px;
+  --b: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* Labels read like HUD readouts: "// QUICK REPLIES". */
+[data-fx='matrix'] .bb-title {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+[data-fx='matrix'] .bb-title::before {
+  content: '// ';
+  color: var(--muted);
+}
+
+[data-fx='matrix'] .bb-for {
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+[data-fx='matrix'] .stack-wordmark,
+[data-fx='matrix'] .header-title {
+  text-shadow:
+    0 0 8px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Primary buttons: filled mint with fine scan stripes, like a HUD control. */
+[data-fx='matrix'] .bb-add {
+  border-color: transparent;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.12) 0 1px, transparent 1px 3px),
+    color-mix(in srgb, var(--accent) 78%, #e8fff0);
+  color: #03140a;
+  font-weight: 700;
+  box-shadow: 0 0 14px -2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+[data-fx='matrix'] .bb-add:hover:not(:disabled) {
+  color: #03140a;
+  border-color: transparent;
+  background:
+    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 0 1px, transparent 1px 3px),
+    color-mix(in srgb, var(--accent) 60%, #ffffff);
+  box-shadow: 0 0 20px 0 color-mix(in srgb, var(--accent) 65%, transparent);
+}
+
+[data-fx='matrix'] .pill {
+  background: rgba(3, 14, 8, 0.9);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Glitch moment (set by fx/matrix.ts for ~150ms): chrome text jitters and splits. Never the terminals. */
+[data-fx='matrix'] .fx-glitch-el {
+  animation: fx-jitter 150ms steps(3) 1;
+  text-shadow:
+    -2px 0 rgba(255, 40, 90, 0.75),
+    2px 0 rgba(40, 220, 255, 0.75),
+    0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+@keyframes fx-jitter {
+  0% {
+    transform: translateX(0);
+  }
+  33% {
+    transform: translateX(-2px) skewX(-6deg);
+  }
+  66% {
+    transform: translateX(2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-fx='matrix'] .fx-glitch-el {
+    animation: none !important;
+  }
+}
+
+/* More room around the panels for the circuitry to show. */
+[data-fx='matrix'] {
+  --gutter: 22px;
+}
+
+/* Dim with brightness, not opacity: see-through thumbnails would show circuitry through the screen. */
+[data-fx='matrix'] .mini.phase-dormant {
+  opacity: 1;
+  filter: brightness(0.55);
+}
+
+[data-fx='matrix'] .mini.phase-dormant:hover {
+  opacity: 1;
+  filter: brightness(0.8);
+}
+
+[data-fx='matrix'] .slot.is-parked .slot-body {
+  opacity: 1;
+  filter: grayscale(1) brightness(0.5);
+}
+
+[data-fx='matrix'] .slot.is-parked:hover .slot-body {
+  opacity: 1;
+  filter: grayscale(0.35) brightness(0.8);
+}
+
+/* The big terminal's corner brackets: bigger and brighter than the cards'. */
+[data-fx='matrix'] .stage::before {
+  inset: -8px;
+  --b: var(--accent);
+  background-size: 20px 2px, 2px 20px, 20px 2px, 2px 20px, 20px 2px, 2px 20px, 20px 2px, 2px 20px;
+}
+
+/* The "+" new-session button: solid mint, no scan stripes. */
+[data-fx='matrix'] .add-session {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 22%, rgba(2, 9, 5, 0.92));
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+[data-fx='matrix'] .add-session:hover {
+  background: color-mix(in srgb, var(--accent) 34%, rgba(2, 9, 5, 0.92));
+  color: #eafff0;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 0 16px -2px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Top bar (DeepStack title + active session title): dark enough to read over the circuitry. */
+[data-fx='matrix'] .header,
+[data-fx='matrix'] .sidebar-drag {
+  background: rgba(1, 5, 3, 0.86);
+}
+
+/* Foreground effects (fx/overlay.ts): above the app, below dialogs. */
+.fx-over {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  pointer-events: none;
+}
+
+/* A title mid-decrypt: the real text hides, the scrambling copy shows in its place. */
+[data-fx='matrix'] .header-title,
+[data-fx='matrix'] .stack-wordmark {
+  position: relative;
+}
+
+[data-fx='matrix'] .fx-decoding {
+  color: transparent !important;
+}
+
+[data-fx='matrix'] .fx-decoding::after {
+  content: attr(data-fx-text);
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  color: var(--accent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+/* ------------------------------------------------------------------ Matrix atmosphere */
+
+/* Between the circuit canvas and the app. Fog drifts, edges fall into darkness, grain flickers. */
+.fx-atmo {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.fx-fog {
+  position: absolute;
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 65%);
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+}
+
+.fx-fog.is-a {
+  left: -15vmax;
+  top: -20vmax;
+  animation: fx-drift-a 47s ease-in-out infinite alternate;
+}
+
+.fx-fog.is-b {
+  right: -25vmax;
+  top: 10vh;
+  animation: fx-drift-b 61s ease-in-out infinite alternate;
+}
+
+.fx-fog.is-c {
+  left: 20vw;
+  bottom: -40vmax;
+  animation: fx-drift-c 53s ease-in-out infinite alternate;
+}
+
+@keyframes fx-drift-a {
+  from { transform: translate(0, 0) scale(1); opacity: 0.8; }
+  to { transform: translate(18vw, 14vh) scale(1.25); opacity: 1; }
+}
+
+@keyframes fx-drift-b {
+  from { transform: translate(0, 0) scale(1.1); opacity: 1; }
+  to { transform: translate(-20vw, 22vh) scale(0.9); opacity: 0.7; }
+}
+
+@keyframes fx-drift-c {
+  from { transform: translate(0, 0) scale(0.95); opacity: 0.7; }
+  to { transform: translate(-12vw, -18vh) scale(1.2); opacity: 1; }
+}
+
+/* Light falls from the middle; the edges, ceiling and floor sink into black. */
+.fx-vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgba(0, 2, 1, 0.45), transparent 16%, transparent 84%, rgba(0, 2, 1, 0.5)),
+    radial-gradient(ellipse 85% 80% at 50% 45%, transparent 50%, rgba(0, 2, 1, 0.3) 78%, rgba(0, 2, 1, 0.75) 100%);
+}
+
+.fx-grain {
+  position: absolute;
+  inset: -120px;
+  opacity: 0.11;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: fx-grain 0.6s steps(6) infinite;
+  will-change: transform;
+}
+
+@keyframes fx-grain {
+  0% { transform: translate(0, 0); }
+  17% { transform: translate(-40px, 22px); }
+  33% { transform: translate(31px, -57px); }
+  50% { transform: translate(-63px, -18px); }
+  67% { transform: translate(48px, 61px); }
+  83% { transform: translate(-12px, 74px); }
+  100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-fog,
+  .fx-grain {
+    animation: none;
+  }
+}
+
+/* Panels float above the board: deep shadows darken the circuitry around them. */
+[data-fx='matrix'] .stage {
+  background:
+    linear-gradient(to bottom, rgba(140, 255, 180, 0.035), transparent 22%),
+    var(--term-bg);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--active-c) 22%, transparent),
+    0 0 34px -6px color-mix(in srgb, var(--active-c) 55%, transparent),
+    inset 0 0 60px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(180, 255, 205, 0.08),
+    0 26px 60px -12px rgba(0, 0, 0, 0.9),
+    0 0 70px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Mid-switch the stage is an empty frame: no halo, or it would linger like a ghost box. */
+[data-fx='matrix'] .stage.is-switching {
+  box-shadow: none;
+}
+
+[data-fx='matrix'] .mini {
+  box-shadow:
+    inset 0 0 24px rgba(0, 0, 0, 0.6),
+    0 8px 22px rgba(0, 0, 0, 0.75),
+    0 0 24px 2px rgba(0, 0, 0, 0.4);
+}
+
+[data-fx='matrix'] .bb-card {
+  box-shadow:
+    inset 0 1px 0 rgba(180, 255, 205, 0.06),
+    0 16px 36px rgba(0, 0, 0, 0.8),
+    0 0 40px 4px rgba(0, 0, 0, 0.45);
+}
+
+[data-fx='matrix'] .add-session {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 10px 24px rgba(0, 0, 0, 0.8);
+}
+
+/* The sidebar sinks into shadow toward the divider, like a recessed rail. */
+[data-fx='matrix'] .sidebar {
+  box-shadow: inset -30px 0 40px -20px rgba(0, 0, 0, 0.8);
+}
+
+/* Mid-switch the big terminal is empty: let the live board show through as a HUD docking bay
+   (a faint targeting grid) instead of a black hole. The flying windows carry their own plates. */
+[data-fx='matrix'] .stage.is-switching {
+  background:
+    linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px) 0 0 / 100% 40px,
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px) 0 0 / 40px 100%,
+    radial-gradient(ellipse at center, rgba(1, 6, 3, 0.15), rgba(1, 6, 3, 0.55));
+}
+
+[data-fx='matrix'] .stage.is-switching::after {
+  opacity: 0;
 }

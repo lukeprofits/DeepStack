@@ -73,6 +73,8 @@ export interface Settings {
   /** Lines kept live in xterm; older lines are loaded on demand. */
   scrollback: number
   miniHeight: number
+  /** Animated theme effects (Matrix): 0 = still, 1 = maximum motion and glitch. */
+  fxIntensity: number
 }
 
 export interface ThemeUi {
@@ -126,6 +128,8 @@ export interface Theme {
   sessionColorOverride?: string
   /** CRT look: phosphor glow, scanlines and vignette over the terminals. */
   crt?: boolean
+  /** Animated background effects around (never over) the terminals. */
+  fx?: 'matrix'
 }
 
 export interface PersistedState {
@@ -157,6 +161,7 @@ export type Intent =
   | { t: 'close'; id: string }
   | { t: 'move'; id: string; inactive: boolean; index: number }
   | { t: 'relaunch'; id: string }
+  | { t: 'clearTerminal'; id: string }
   | { t: 'rename'; id: string; name: string }
   /** Rename from the header: Claude sessions get it as `/rename`, so Claude owns the name. */
   | { t: 'retitle'; id: string; name: string }

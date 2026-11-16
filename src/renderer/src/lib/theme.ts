@@ -20,6 +20,7 @@ export function applyTheme(theme: Theme): void {
   r.setProperty('--term-bg', theme.terminal.background)
   r.setProperty('--term-fg', theme.terminal.foreground)
   document.documentElement.dataset.crt = theme.crt ? 'on' : 'off'
+  document.documentElement.dataset.fx = theme.fx ?? 'none'
 }
 
 export function sessionColor(theme: Theme, color: string): string {
