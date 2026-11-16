@@ -281,7 +281,7 @@ export const DEFAULT_SETTINGS: Settings = {
   snapToHigher: false,
   standalone: false,
   bubbleClick: 'load',
-  pills: ['Continue'],
+  pills: ['Continue', 'Commit & push'],
   themeId: 'matrix',
   scrollback: 1500,
   miniHeight: 120,
