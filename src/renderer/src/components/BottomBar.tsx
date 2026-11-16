@@ -140,7 +140,8 @@ function Composer(p: Props) {
 
 function QueuePanel(p: Props) {
   const n = p.queue.length
-  const clickVerb = p.settings.bubbleClick === 'load' ? 'load it into the input' : 'send it'
+  // No add button: clicking the open space in the card starts a new follow-up.
+  const canAdd = !!p.sessionId && !p.composerMode
   return (
     <section className={`bb-card bb-queue ${p.sessionId ? '' : 'is-disabled'}`} style={{ ['--c' as string]: p.sessionColor }}>
       <header className="bb-head">
@@ -151,31 +152,40 @@ function QueuePanel(p: Props) {
           Queued <span className="bb-for">for {p.sessionName}</span>
         </span>
         {n > 0 && <span className="bb-count">{n}</span>}
-        <button className="bb-add" onClick={p.onOpenQueue} disabled={!p.sessionId || !!p.composerMode} title="Queue a follow-up for this session">
-          + Add
-        </button>
       </header>
-      <div className="bb-list">
-        {n === 0 && !p.composerMode && <p className="bb-empty">Nothing queued. Line up follow-ups here and send each one when the session is ready.</p>}
+      <div
+        className={`bb-list ${canAdd ? 'is-addable' : ''}`}
+        onClick={(e) => {
+          if (canAdd && !(e.target as HTMLElement).closest('.bb-item, .bb-composer')) p.onOpenQueue()
+        }}
+      >
+        {n === 0 && !p.composerMode && <p className="bb-empty">Nothing queued. Click here to line up a follow-up, then send it when the session is ready.</p>}
         {p.queue.map((q, i) => (
-          <div key={q.id} className="bb-item">
-            <button className="bb-item-main" onClick={(e) => p.onBubble(q, e.altKey)} title={`${q.text}\n\nClick to ${clickVerb}`}>
-              <span className="bb-item-n">{i + 1}</span>
-              <span className="bb-item-text">{q.text}</span>
-            </button>
-            <span className="bb-item-actions">
-              <button onClick={() => p.onSendQueued(q)} title="Send now" aria-label="Send now">
+          <div key={q.id} className="bb-item" title={q.text}>
+            <span className="bb-item-n">{i + 1}</span>
+            <span className="bb-item-text">{q.text}</span>
+            {/* On hover the row splits into thirds: send · edit · delete. */}
+            <span className="bb-item-zones">
+              <button onClick={() => p.onSendQueued(q)} aria-label="Send now">
                 <SendIcon />
+                Send
               </button>
-              <button onClick={() => p.onLoadQueued(q)} title="Load into the input to edit" aria-label="Edit">
+              <button onClick={() => p.onLoadQueued(q)} aria-label="Edit">
                 <EditIcon />
+                Edit
               </button>
-              <button className="is-remove" onClick={() => p.onRemoveBubble(q)} title="Remove" aria-label="Remove">
+              <button className="is-remove" onClick={() => p.onRemoveBubble(q)} aria-label="Delete">
                 <XIcon />
+                Delete
               </button>
             </span>
           </div>
         ))}
+        {n > 0 && canAdd && (
+          <button className="bb-new" onClick={p.onOpenQueue}>
+            + Queue another
+          </button>
+        )}
         {p.composerMode && <Composer {...p} />}
       </div>
     </section>

@@ -78,6 +78,7 @@ Ctrl+Shift, because the browser keeps ⌘W / ⌘N / ⌘1–9 and plain Ctrl belo
 | Keys | Action |
 |---|---|
 | ⌘K | Clear the terminal (like iTerm / Terminal.app) |
+| ⌘R / F5 | Reload the page (also in the standalone window; on a Mac F5 needs fn) |
 | ⌃⇧N | New terminal |
 | ⌃⇧W | Close session (asks first) |
 | ⌃⇧J | Jump to the next ready session |

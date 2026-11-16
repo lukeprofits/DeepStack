@@ -625,27 +625,18 @@ textarea:focus {
   position: relative;
   display: flex;
   align-items: center;
+  gap: 10px;
   height: 30px;
   margin: 0 6px;
+  padding: 0 8px;
   border-radius: 7px;
+  color: color-mix(in srgb, var(--text) 86%, transparent);
+  font-size: 12.5px;
   transition: background 120ms ease;
 }
 
 .bb-item:hover {
   background: color-mix(in srgb, var(--c) 8%, transparent);
-}
-
-.bb-item-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 100%;
-  padding: 0 8px;
-  text-align: left;
-  color: color-mix(in srgb, var(--text) 86%, transparent);
-  font-size: 12.5px;
 }
 
 .bb-item-n {
@@ -665,50 +656,86 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 
-.bb-item:hover .bb-item-main {
-  color: var(--text);
-}
-
-/* Send now / edit / remove: shown on hover, over the end of the text. */
-.bb-item-actions {
+/* Send · edit · delete: on hover the whole row splits into three equal click targets. */
+.bb-item-zones {
   position: absolute;
-  right: 4px;
-  top: 50%;
-  display: flex;
-  gap: 2px;
-  padding-left: 18px;
-  transform: translateY(-50%);
-  background: linear-gradient(to right, transparent, color-mix(in srgb, var(--c) 8%, var(--term-bg)) 18px);
-  border-radius: 6px;
+  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-radius: 7px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--c) 7%, var(--term-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 22%, transparent);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
+  transition: opacity 140ms ease;
 }
 
-.bb-item:hover .bb-item-actions,
-.bb-item:focus-within .bb-item-actions {
+.bb-item:hover .bb-item-zones,
+.bb-item:focus-within .bb-item-zones {
   opacity: 1;
   pointer-events: auto;
 }
 
-.bb-item-actions button {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  color: color-mix(in srgb, var(--text) 70%, transparent);
+.bb-item-zones button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: color-mix(in srgb, var(--text) 62%, transparent);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   transition: color 120ms ease, background 120ms ease;
 }
 
-.bb-item-actions button:hover {
-  color: var(--c);
-  background: color-mix(in srgb, var(--c) 14%, transparent);
+.bb-item-zones button + button {
+  border-left: 1px solid color-mix(in srgb, var(--c) 16%, transparent);
 }
 
-.bb-item-actions button.is-remove:hover {
+.bb-item-zones button:hover,
+.bb-item-zones button:focus-visible {
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  outline: none;
+}
+
+.bb-item-zones button.is-remove:hover,
+.bb-item-zones button.is-remove:focus-visible {
   color: #f87171;
   background: rgba(248, 113, 113, 0.14);
+}
+
+/* Clicking the open space in the queue starts a new follow-up. */
+.bb-list.is-addable {
+  cursor: text;
+}
+
+.bb-list.is-addable .bb-item {
+  cursor: default;
+}
+
+/* Quiet "+ Queue another" row once there's something queued. */
+.bb-new {
+  display: block;
+  margin: 2px 6px 0;
+  height: 26px;
+  width: calc(100% - 12px);
+  padding: 0 32px;
+  border-radius: 7px;
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  opacity: 0.55;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.bb-new:hover,
+.bb-new:focus-visible {
+  opacity: 1;
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 6%, transparent);
+  outline: none;
 }
 
 /* Inline composer at the bottom of the queue. */
@@ -3497,14 +3524,16 @@ textarea.json {
 /* Mid-switch the big terminal is empty: let the live board show through as a HUD docking bay
    (a faint targeting grid) instead of a black hole. The flying windows carry their own plates. */
 [data-fx='matrix'] .stage.is-switching {
+  /* --bay-solid (0..1, set per frame by Stage) blends between the see-through bay and solid black. */
   background:
-    linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px) 0 0 / 100% 40px,
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent) 1px, transparent 1px) 0 0 / 40px 100%,
+    linear-gradient(color-mix(in srgb, var(--accent) calc(7% * (1 - var(--bay-solid, 0))), transparent) 1px, transparent 1px) 0 0 / 100% 40px,
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) calc(7% * (1 - var(--bay-solid, 0))), transparent) 1px, transparent 1px) 0 0 / 40px 100%,
+    linear-gradient(color-mix(in srgb, var(--term-bg) calc(100% * var(--bay-solid, 0)), transparent), color-mix(in srgb, var(--term-bg) calc(100% * var(--bay-solid, 0)), transparent)),
     radial-gradient(ellipse at center, rgba(1, 6, 3, 0.15), rgba(1, 6, 3, 0.55));
 }
 
 [data-fx='matrix'] .stage.is-switching::after {
-  opacity: 0;
+  opacity: var(--bay-solid, 0);
 }
 
 /* Parked is one solid, edge-to-edge panel in Matrix: the open drawer spans the sidebar's full
@@ -3517,4 +3546,103 @@ textarea.json {
 
 [data-fx='matrix'] .park-head:not(.is-open) {
   box-shadow: 0 120px 0 0 rgba(1, 6, 3, 0.9);
+}
+
+/* Excitement (fx/matrix.ts sets --fx-excite 0..1 from mouse speed): the HUD glows up while you
+   move and settles back slowly. */
+[data-fx='matrix'] .stage {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--active-c) calc(22% + 30% * var(--fx-excite, 0)), transparent),
+    0 0 calc(34px + 30px * var(--fx-excite, 0)) calc(-6px + 4px * var(--fx-excite, 0))
+      color-mix(in srgb, var(--active-c) calc(55% + 40% * var(--fx-excite, 0)), transparent),
+    inset 0 0 60px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(180, 255, 205, 0.08),
+    0 26px 60px -12px rgba(0, 0, 0, 0.9),
+    0 0 70px 6px rgba(0, 0, 0, 0.5);
+}
+
+[data-fx='matrix'] .stage::before,
+[data-fx='matrix'] .bb-card::before {
+  filter: drop-shadow(0 0 calc(4px + 8px * var(--fx-excite, 0)) color-mix(in srgb, var(--accent) calc(60% + 40% * var(--fx-excite, 0)), transparent));
+}
+
+[data-fx='matrix'] .bb-card {
+  border-color: color-mix(in srgb, var(--accent) calc(22% + 30% * var(--fx-excite, 0)), transparent);
+}
+
+/* Working: a glowing ring with a fading tail circles the session's number in its label. */
+.slot-badge-n {
+  position: relative;
+}
+
+.slot-badge-n.is-busy {
+  margin: 0 4px 0 3px;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--c) 80%, transparent);
+}
+
+.slot-badge-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, color-mix(in srgb, var(--c) 25%, transparent) 140deg, var(--c) 320deg, #fff 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.6px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.6px));
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--c) 85%, transparent));
+  animation: mini-spin 0.9s linear infinite;
+  pointer-events: none;
+}
+
+/* The light sweeping along the top edge of a busy thumbnail. */
+.mini.phase-busy::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  z-index: 2;
+  background: linear-gradient(90deg, transparent, var(--c), #fff, var(--c), transparent) no-repeat;
+  background-size: 35% 100%;
+  animation: mini-sweep 1.6s ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+@keyframes mini-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mini-sweep {
+  0% { background-position: -40% 0; }
+  100% { background-position: 140% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot-badge-ring,
+  .mini.phase-busy::after {
+    animation-duration: 3s;
+  }
+}
+
+.fx-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Current time, right of the folder path in the header. */
+.header-clock {
+  flex: none;
+  color: color-mix(in srgb, var(--text) 75%, transparent);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
 }

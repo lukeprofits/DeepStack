@@ -60,6 +60,17 @@ export function FxLayer({ theme, intensity }: { theme: Theme; intensity: number 
       </div>
       {/* Effects on top of the app (comets, sparks, reticle, boot); never over terminal text. */}
       <canvas ref={over} className="fx-over" aria-hidden />
+      {/* Typing "rip": jagged horizontal bands that slide the chrome apart (driven by fx/matrix.ts). */}
+      <svg className="fx-defs" aria-hidden width="0" height="0">
+        <filter id="fx-rip" x="-60%" y="0" width="220%" height="100%" colorInterpolationFilters="sRGB">
+          <feTurbulence id="fx-rip-noise" type="fractalNoise" baseFrequency="0.00008 0.02" numOctaves="1" seed="1" result="n" />
+          <feComponentTransfer in="n" result="steps">
+            <feFuncR type="discrete" tableValues="0.5 0.5 0 0.5 0.5 0.5 1 0.5 0.5 0.2 0.5 0.5 0.5 0.8 0.5" />
+            <feFuncG type="linear" slope="0" intercept="0.5" />
+          </feComponentTransfer>
+          <feDisplacementMap id="fx-rip-map" in="SourceGraphic" in2="steps" scale="0" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </svg>
     </>
   )
 }

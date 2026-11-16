@@ -300,6 +300,7 @@ export function Stage(props: Props) {
     if (stage?.classList.contains('is-switching')) {
       stage.style.transition = 'none'
       stage.classList.remove('is-switching')
+      stage.style.removeProperty('--bay-solid')
       void stage.offsetWidth
       requestAnimationFrame(() => (stage.style.transition = ''))
     }
@@ -381,7 +382,13 @@ export function Stage(props: Props) {
     placeTether(connectorRef.current, a.to, inEdge, copyOpacity(qIn))
     // While the windows travel, the stage is an empty neutral frame; the flying frames carry the colour.
     const stage = frameRef.current
-    if (stage) stage.classList.add('is-switching')
+    if (stage) {
+      stage.classList.add('is-switching')
+      // The empty stage's black fades out as the old window leaves and back in as the new one
+      // grows, so it's already solid when the switch ends (no snap).
+      const solid = Math.max(clamp01(1 - qOut / 0.35), clamp01((0.5 - qIn) / 0.45))
+      stage.style.setProperty('--bay-solid', solid.toFixed(3))
+    }
     if (t < 1) {
       raf.current = requestAnimationFrame(frame)
       return

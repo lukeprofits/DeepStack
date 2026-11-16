@@ -112,6 +112,15 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   let py = 0
   let tx = 0
   let ty = 0
+  /**
+   * Excitement from mouse speed, 0..1: snaps up fast when you move, then sinks back slowly.
+   * Brightens the board and pieces, quickens the pulses, and (via --fx-excite) the HUD glow.
+   */
+  let excite = 0
+  let exciteKick = 0
+  let lastPtr: { x: number; y: number; t: number } | null = null
+  let exciteMain: HTMLElement | null = null
+  let exciteShown = -1
   let shadowAt = 0
   let bokeh: { x: number; y: number; r: number; v: number; a: number; ph: number }[] = []
   let bokehSprite: HTMLCanvasElement | null = null
@@ -413,6 +422,13 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       ctx.setTransform(1, 0, 0, 1, ox + p.x * dpr, oy + (p.y + by) * dpr)
       ctx.rotate(p.rot)
       ctx.drawImage(p.c, -p.c.width / 2, -p.c.height / 2)
+      if (excite > 0.03) {
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.globalAlpha = 0.9 * excite
+        ctx.drawImage(p.c, -p.c.width / 2, -p.c.height / 2)
+        ctx.globalAlpha = 1
+        ctx.globalCompositeOperation = 'source-over'
+      }
     }
   }
 
@@ -720,7 +736,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     rings = []
   }
 
-  const pulseTarget = () => Math.round(20 + 80 * intensity + boost)
+  const pulseTarget = () => Math.round(20 + 80 * intensity + boost + 70 * excite)
 
   function newPulse(usable?: number[]): { tr: number; d: number; v: number } {
     const pool = usable ?? traces.map((t, i) => (t.len > 60 ? i : -1)).filter((i) => i >= 0)
@@ -751,7 +767,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       const p = pulses[i]
       const t = traces[p.tr]
       if (!t) continue
-      p.d += p.v * dt
+      p.d += p.v * dt * (1 + 1.4 * excite)
       if (p.d >= t.len) {
         const end = t.pts[t.pts.length - 1]
         flashes.push({ x: end.x, y: end.y, age: 0 })
@@ -804,6 +820,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     drawSweep(now, dt)
     drawText(now, dt)
     drawAtmosphere(now, dt)
+    drawWave(now, dt)
     drawGlitch(now)
     elementGlitch(now)
   }
@@ -901,6 +918,12 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     ctx.setTransform(1, 0, 0, 1, nx, ny)
     ctx.globalAlpha = 0.55
     ctx.drawImage(staticLayer, 0, 0)
+    if (excite > 0.03) {
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.globalAlpha = excite
+      ctx.drawImage(staticLayer, 0, 0)
+      ctx.globalCompositeOperation = 'source-over'
+    }
     ctx.globalAlpha = 1
   }
 
@@ -913,6 +936,17 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     const k = 1 - Math.exp(-dt / 0.035)
     px += (gx - px) * k
     py += (gy - py) * k
+    // Excitement: quick attack (~70ms) toward how fast the mouse is moving, slow release (~1.6s).
+    exciteKick *= Math.exp(-dt / 0.12)
+    if (exciteKick > excite) excite += (exciteKick - excite) * (1 - Math.exp(-dt / 0.07))
+    else excite *= Math.exp(-dt / 1.6)
+    if (reduced) excite = 0
+    const shown = Math.round(excite * 50) / 50
+    if (shown !== exciteShown) {
+      exciteShown = shown
+      exciteMain ??= document.querySelector<HTMLElement>('.main')
+      exciteMain?.style.setProperty('--fx-excite', String(shown))
+    }
     // The haze layers (CSS) follow at their own depth.
     if (now >= shadowAt) {
       shadowAt = now + 16
@@ -997,15 +1031,108 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     void now
   }
 
-  function startGlitch(now: number): void {
-    glitchUntil = now + 90 + rand() * 130
-    strips = Array.from({ length: 2 + Math.floor(rand() * 4) }, () => ({
+  function startGlitch(now: number, power = 0): void {
+    // power 0 = the idle tear; up to 1 = a hard typing glitch (more, taller, wider strips).
+    glitchUntil = now + 90 + rand() * 130 + power * 60
+    strips = Array.from({ length: 2 + Math.floor(rand() * (4 + 8 * power)) }, () => ({
       y: rand() * H,
-      h: 2 + rand() * 18,
-      dx: (rand() - 0.5) * 60,
+      h: 2 + rand() * (18 + 70 * power),
+      dx: (rand() - 0.5) * (60 + 220 * power),
       tint: rand()
     }))
   }
+
+  /** Typing heat, 0..1: each key adds some, it cools over ~0.8s. Fast typing glitches harder. */
+  let typeHeat = 0
+  let typeAt = 0
+  /** Typing distortion strength 0..1; eases off over ~0.4s. */
+  let wave = 0
+  let waveEls: HTMLElement[] = []
+  let waveShown = false
+
+  /**
+   * Typing distortion: the board ripples sideways in smooth bands, and the chrome around the
+   * terminal (stack, header, bottom bar) sways with a light purple colour fringe. The terminal
+   * itself is never touched.
+   */
+  /** Torn bands for the typing distortion: uneven heights and offsets, reshuffled every few frames. */
+  let tears: { y: number; h: number; dx: number }[] = []
+  let ripMap: Element | null = null
+  let ripNoise: Element | null = null
+  let ripAt = 0
+  let tearsAt = 0
+
+  function drawWave(now: number, dt: number): void {
+    // Snappy: dies off within ~half a second of the last key.
+    wave *= Math.exp(-dt / 0.13)
+    if (wave > 0.015 && staticLayer) {
+      if (now >= tearsAt) {
+        // New jagged tear pattern ~every 40ms: a few big rips, many small slips.
+        tearsAt = now + 30 + rand() * 30
+        tears = []
+        for (let y = 0; y < H; ) {
+          // Fewer, taller tears that throw hard; the gaps between them stay put.
+          const h = 24 + rand() * 110
+          const rip = rand() < 0.35
+          tears.push({ y, h, dx: rip ? (rand() - 0.5) * 300 : 0 })
+          y += h
+        }
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      for (const t of tears) {
+        const dx = Math.round(t.dx * wave * dpr)
+        if (!dx) continue
+        const y = Math.round(t.y * dpr)
+        const h = Math.max(1, Math.round(t.h * dpr))
+        ctx.drawImage(canvas, 0, y, canvas.width, h, dx, y, canvas.width, h)
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+    // Chrome jitter, written straight to the elements (no page-wide style recalcs).
+    const on = wave > 0.015
+    if (!on && !waveShown) return
+    if (!waveEls.length) waveEls = [...document.querySelectorAll<HTMLElement>('.sidebar, .header, .bottom-bar')]
+    const [r, g, b] = [ar, ag, ab]
+    ripMap ??= document.getElementById('fx-rip-map')
+    ripNoise ??= document.getElementById('fx-rip-noise')
+    // Filters (the rip and the colour fringe) re-render whole panels, so they change ~20x a
+    // second; the shake below is a cheap transform and runs every frame.
+    const refilter = !on || now >= ripAt
+    if (on && refilter) {
+      ripAt = now + 50
+      ripMap?.setAttribute('scale', String(Math.round(140 * wave)))
+      ripNoise?.setAttribute('seed', String(Math.floor(rand() * 1000)))
+    } else if (!on) ripMap?.setAttribute('scale', '0')
+    const ab2 = (3.6 * wave).toFixed(1)
+    // The fringe's strength follows the wave too, so it dims to nothing instead of lingering at
+    // full colour behind the see-through panels and then switching off.
+    const fade = Math.min(1, wave * 1.6)
+    const al = (n: number) => (n * fade).toFixed(3)
+    for (const el of waveEls) {
+      if (!on) {
+        el.style.translate = ''
+        el.style.rotate = ''
+        el.style.filter = ''
+        continue
+      }
+      // Violent: big random jumps both ways, a little vertical kick, a hint of twist.
+      const big = rand() < 0.45
+      const sx = (big ? (rand() - 0.5) * 30 : (rand() - 0.5) * 6) * wave
+      const sy = (big ? (rand() - 0.5) * 8 : (rand() - 0.5) * 2) * wave
+      el.style.translate = `${sx.toFixed(1)}px ${sy.toFixed(1)}px`
+      el.style.rotate = `${((rand() - 0.5) * 0.6 * wave).toFixed(2)}deg`
+      if (!refilter) continue
+      // Rip the stack into sliding bands, then fringe in the theme's greens with a faint purple ghost.
+      el.style.filter =
+        (el.classList.contains('sidebar') ? `url(#fx-rip) ` : '') +
+        `drop-shadow(-${ab2}px 0 0 rgba(${Math.min(255, r + 90)},255,${Math.min(255, b + 90)},${al(0.45)})) ` +
+        `drop-shadow(${ab2}px 0 0 rgba(${r >> 2},${Math.round(g * 0.55)},${b >> 2},${al(0.7)})) ` +
+        `drop-shadow(0 ${(Number(ab2) * 0.6).toFixed(1)}px 0 rgba(170,70,255,${al(0.22)}))`
+    }
+    waveShown = on
+    if (!on) waveEls = []
+  }
+
 
   function drawGlitch(now: number): void {
     if (now >= glitchUntil) {
@@ -1091,6 +1218,13 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   const onPointer = (e: PointerEvent) => {
     tx = Math.max(-1, Math.min(1, (e.clientX / Math.max(1, VW)) * 2 - 1))
     ty = Math.max(-1, Math.min(1, (e.clientY / Math.max(1, VH)) * 2 - 1))
+    const t = performance.now()
+    if (lastPtr && t > lastPtr.t) {
+      // px/s; a brisk flick across the screen is ~3000.
+      const v = Math.hypot(e.clientX - lastPtr.x, e.clientY - lastPtr.y) / ((t - lastPtr.t) / 1000)
+      exciteKick = Math.max(exciteKick, Math.min(1, v / 1300))
+    }
+    lastPtr = { x: e.clientX, y: e.clientY, t }
   }
   const onLeave = () => {
     tx = 0
@@ -1108,6 +1242,11 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     glitch,
     burst() {
       if (intensity <= 0 || reduced) return
+      const now = performance.now()
+      typeHeat = Math.min(1, typeHeat * Math.exp(-(now - typeAt) / 800) + 0.3)
+      typeAt = now
+      // A ripple of distortion that swells with each key and eases off (drawWave).
+      wave = Math.min(1, wave + 0.32 + 0.3 * typeHeat)
       boost = Math.min(160, boost + 14)
       for (let i = 0; i < 10; i++) pulses.push({ ...newPulse(), v: 200 + rand() * 160 })
       if (hubs.length && rand() < 0.5) rings.push({ ...hubs[Math.floor(rand() * hubs.length)], age: 0 })
@@ -1123,6 +1262,11 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       document.documentElement.style.removeProperty('--hud-sy')
       for (const el of document.querySelectorAll<HTMLElement>('.fx-fog')) el.style.translate = ''
       document.removeEventListener('visibilitychange', onVisibility)
+      for (const el of waveEls) {
+        el.style.translate = ''
+        el.style.rotate = ''
+        el.style.filter = ''
+      }
       for (const el of glitched) el.classList.remove('fx-glitch-el')
       glitched.clear()
       delete (window as unknown as { __fxGlitch?: () => void }).__fxGlitch

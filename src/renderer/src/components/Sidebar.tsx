@@ -95,7 +95,7 @@ function Slot({ s, rt, theme, big, landing, onRequestClose }: SlotProps) {
             </div>
           )}
         </div>
-        <SlotLabel n={stackPosition(s)} name={displayName(s)} />
+        <SlotLabel n={stackPosition(s)} name={displayName(s)} busy={phase === 'busy' || phase === 'starting'} />
         <CloseArm name={displayName(s)} onArmedClick={() => onRequestClose(s.id)} />
       </div>
     </div>
@@ -149,7 +149,8 @@ function CloseArm({ name, onArmedClick }: { name: string; onArmedClick: () => vo
  * "1 │ name" on each thumbnail: depth in the stack, then the session's name. A name too long
  * for the thumbnail fades out at the edge and, on hover, scrolls to show the rest.
  */
-function SlotLabel({ n, name }: { n: number; name: string }) {
+/** busy: Claude is working; a glowing ring circles the number. */
+function SlotLabel({ n, name, busy = false }: { n: number; name: string; busy?: boolean }) {
   const box = useRef<HTMLSpanElement>(null)
   const text = useRef<HTMLSpanElement>(null)
   const [overflow, setOverflow] = useState(0)
@@ -178,7 +179,10 @@ function SlotLabel({ n, name }: { n: number; name: string }) {
         ['--scroll-ms' as string]: `${Math.round(Math.max(1400, overflow * 32))}ms`
       }}
     >
-      <span className="slot-badge-n">{n}</span>
+      <span className={`slot-badge-n ${busy ? 'is-busy' : ''}`} title={busy ? 'Working' : undefined}>
+        {busy && <span className="slot-badge-ring" aria-hidden />}
+        {n}
+      </span>
       <span className="slot-badge-sep" aria-hidden />
       <span className="slot-badge-name" ref={box}>
         <span className="slot-badge-text" ref={text}>

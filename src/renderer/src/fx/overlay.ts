@@ -4,7 +4,7 @@
  * boot sequence).
  *
  *  - comets orbiting the big terminal's border, in the active session's colour
- *  - sparks thrown off that border on every keystroke (`onKey` also fires a backdrop burst)
+ *  - every keystroke fires a glitch through the backdrop and the chrome (MatrixFx.burst)
  *  - titles that decrypt through random glyphs when they change
  *  - a boot sequence on load: the screen opens from the centre and "// SYSTEM ONLINE" decrypts
  */
@@ -119,20 +119,11 @@ export function startOverlay(canvas: HTMLCanvasElement, opts: Opts): Overlay {
   }
 
   function onKey(e: KeyboardEvent): void {
+    // Typing kicks a glitch through everything around the terminal (see MatrixFx.burst).
     if (intensity <= 0 || e.repeat || e.metaKey) return
     opts.onKey()
-    const r = stageRect()
-    if (!r) return
-    const n = Math.round(10 + 16 * intensity)
-    const p = perimeter(r, Math.random() * perimLength(r))
-    for (let i = 0; i < n; i++) {
-      const spread = (Math.random() - 0.5) * 1.6
-      const a = Math.atan2(p.ny, p.nx) + spread
-      const v = 160 + Math.random() * 260
-      sparks.push({ x: p.x, y: p.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, age: 0, life: 0.5 + Math.random() * 0.5 })
-    }
-    if (sparks.length > 400) sparks.splice(0, sparks.length - 400)
   }
+
 
   function scrambled(text: string, p: number): string {
     const done = Math.floor(text.length * p)

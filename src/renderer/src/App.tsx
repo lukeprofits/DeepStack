@@ -7,6 +7,7 @@ import { ConfirmDialog } from './components/ConfirmDialog'
 import { SettingsPanel, type Section } from './components/SettingsPanel'
 import { GearIcon } from './components/icons'
 import { HeaderTitle } from './components/HeaderTitle'
+import { Clock } from './components/Clock'
 import { FxLayer } from './components/FxLayer'
 import { Sidebar } from './components/Sidebar'
 import { focusMainTerminal, Stage, type Preview, type StageVisual } from './components/Stage'
@@ -184,6 +185,18 @@ export function App() {
   // One capture-phase handler for every key the app (not the terminal) owns.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // ⌘R or F5 reloads the page, even while a terminal has focus (xterm would swallow them),
+      // and in the standalone window, which has no reload shortcut of its own. On a Mac the F5 key
+      // is dictation unless fn is held, so ⌘R is the everyday one; fn/⌥+F5 work too.
+      const reloadKey =
+        (e.key === 'F5' && !e.metaKey && !e.ctrlKey) ||
+        (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'KeyR')
+      if (reloadKey) {
+        e.preventDefault()
+        e.stopPropagation()
+        location.reload()
+        return
+      }
       // Typing a session name: every key belongs to that field.
       if ((e.target as HTMLElement | null)?.closest?.('.header-title-input')) return
       // ⌘K clears the terminal, like iTerm and Terminal.app (not while typing in an app field).
@@ -338,6 +351,7 @@ export function App() {
               </button>
             )}
             {active?.cwd && <span className="header-cwd">{tildePath(active.cwd)}</span>}
+            <Clock />
             <button className="header-settings" onClick={() => setShowSettings(true)} title="Settings (⌃⇧,)" aria-label="Settings">
               <GearIcon size={18} />
             </button>
