@@ -87,9 +87,6 @@ function QuickReplies({ settings, disabled, onPill, onEdit }: { settings: Settin
                 title={loads ? `Load “${text.trim()}” into the input to finish` : `Send “${text}” now`}
               >
                 {label(text)}
-                <span className="pill-icon" aria-hidden>
-                  {loads ? '✎' : '↵'}
-                </span>
               </button>
             )
           })}

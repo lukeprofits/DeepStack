@@ -574,7 +574,7 @@ textarea:focus {
   align-items: center;
   height: 28px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: 7px;
   border: 1px solid color-mix(in srgb, var(--text) 9%, var(--border));
   background: color-mix(in srgb, var(--text) 4%, var(--pill));
   color: color-mix(in srgb, var(--pill-text) 92%, var(--text));
@@ -583,21 +583,10 @@ textarea:focus {
   transition: color 140ms ease, border-color 140ms ease, background 140ms ease, transform 90ms ease;
 }
 
-.pill-icon {
-  margin-left: 7px;
-  opacity: 0.45;
-  font-size: 11px;
-  transition: opacity 140ms ease;
-}
-
 .pill:hover:not(:disabled) {
   color: var(--text);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   background: color-mix(in srgb, var(--accent) 8%, var(--pill));
-}
-
-.pill:hover:not(:disabled) .pill-icon {
-  opacity: 0.9;
 }
 
 .pill:active:not(:disabled) {
