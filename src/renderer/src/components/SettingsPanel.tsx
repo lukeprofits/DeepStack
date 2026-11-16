@@ -9,10 +9,12 @@ import { Card, Segmented, SettingRow, Slider, Stepper, Toggle, XIcon } from './c
 
 interface Props {
   state: AppState
+  /** Open on this section (default: Auto-switch). */
+  initialSection?: Section
   onClose: () => void
 }
 
-type Section = 'switch' | 'replies' | 'terminal' | 'session' | 'appearance' | 'system'
+export type Section = 'switch' | 'replies' | 'terminal' | 'session' | 'appearance' | 'system'
 
 const set = (settings: Partial<Settings>) => void stack.intent({ t: 'setSettings', settings })
 
@@ -400,8 +402,8 @@ function System({ state, onQuit }: { state: AppState; onQuit: () => void }) {
 
 // ------------------------------------------------------------------ panel
 
-export function SettingsPanel({ state, onClose }: Props) {
-  const [section, setSection] = useState<Section>('switch')
+export function SettingsPanel({ state, initialSection, onClose }: Props) {
+  const [section, setSection] = useState<Section>(initialSection ?? 'switch')
   const [confirmQuit, setConfirmQuit] = useState(false)
   const meta = SECTIONS.find((s) => s.id === section)!
   const panelRef = useRef<HTMLDivElement>(null)

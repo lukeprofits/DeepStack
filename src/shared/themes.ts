@@ -224,6 +224,9 @@ export const BUILT_IN_THEMES: Theme[] = [
   }
 ]
 
+/** Quick replies that shipped as defaults before; a saved list still equal to this is upgraded. */
+export const LEGACY_DEFAULT_PILLS = ['continue', 'yes', 'run the tests', 'do deep research on ']
+
 export const DEFAULT_SETTINGS: Settings = {
   advanceMode: 'priority',
   attentionFirst: true,
@@ -231,7 +234,7 @@ export const DEFAULT_SETTINGS: Settings = {
   snapToHigher: false,
   standalone: false,
   bubbleClick: 'load',
-  pills: ['continue', 'yes', 'run the tests', 'do deep research on '],
+  pills: ['Continue'],
   themeId: 'phosphor',
   scrollback: 1500,
   miniHeight: 120

@@ -76,7 +76,8 @@ textarea:focus {
 
 .app {
   display: grid;
-  grid-template-columns: clamp(220px, 22vw, 340px) 1fr;
+  /* --side-w: width you dragged the stack to; --side-min: what the DeepStack header needs. */
+  grid-template-columns: max(var(--side-min, 200px), var(--side-w, clamp(220px, 22vw, 340px))) 1fr;
   height: 100%;
   transition: grid-template-columns 280ms cubic-bezier(0.42, 0, 0.58, 1);
 }
@@ -86,6 +87,7 @@ textarea:focus {
 }
 
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -443,62 +445,163 @@ textarea:focus {
 
 /* ------------------------------------------------------------------ bottom bar */
 
+/* Two matching cards: Quick replies and the active session's queue. Fixed height, so queueing
+   or removing messages never resizes the big terminal (no Claude reflow). */
 .bottom-bar {
+  /* Card = 36px header + 1px rule + three 30px rows + 8px list padding + 2px border; plus the gutter. */
+  --bb-h: calc(137px + var(--gutter));
   flex: none;
-  display: flex;
-  align-items: flex-end;
-  gap: var(--gutter);
-  padding: 14px var(--gutter) 18px;
-  border-top: 1px solid var(--border);
-  min-height: 48px;
-  max-height: 40vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  height: var(--bb-h);
+  padding: 0 var(--gutter) var(--gutter);
 }
 
-.presets {
-  flex: 0 1 auto;
+.bb-card {
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--text) 7%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 2.5%, var(--term-bg));
+  overflow: hidden;
+}
+
+.bb-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.bb-icon {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+}
+
+.bb-queue .bb-icon {
+  color: var(--c);
+}
+
+.bb-title {
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
 }
 
-.presets-label {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim, color-mix(in srgb, var(--text) 45%, transparent));
+.bb-for {
+  color: var(--muted);
+  font-weight: 500;
 }
 
-.pills {
+.bb-hint {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.bb-count {
+  flex: none;
+  min-width: 20px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  color: var(--c);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.bb-add {
+  margin-left: auto;
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--text) 10%, var(--border));
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: color-mix(in srgb, var(--text) 80%, transparent);
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.bb-add:hover:not(:disabled) {
+  color: var(--c);
+  border-color: color-mix(in srgb, var(--c) 45%, var(--border));
+  background: color-mix(in srgb, var(--c) 10%, transparent);
+}
+
+.bb-add:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.bb-empty {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* Quick replies */
+.bb-replies .pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding-bottom: 1px;
+  align-content: flex-start;
+  gap: 7px;
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--text) 9%, var(--border));
+  background: color-mix(in srgb, var(--text) 4%, var(--pill));
+  color: color-mix(in srgb, var(--pill-text) 92%, var(--text));
+  font-size: 12.5px;
+  white-space: nowrap;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, transform 90ms ease;
 }
 
 .pill-icon {
-  margin-left: 6px;
-  opacity: 0.5;
+  margin-left: 7px;
+  opacity: 0.45;
   font-size: 11px;
+  transition: opacity 140ms ease;
+}
+
+.pill:hover:not(:disabled) {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--pill));
 }
 
 .pill:hover:not(:disabled) .pill-icon {
   opacity: 0.9;
 }
 
-.pill {
-  background: var(--pill);
-  color: var(--pill-text);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.pill:hover:not(:disabled) {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+.pill:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .pill:disabled {
@@ -506,80 +609,145 @@ textarea:focus {
   cursor: default;
 }
 
-.queue {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
+/* Queue */
+.bb-queue.is-disabled {
+  opacity: 0.6;
+}
+
+.bb-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  max-height: calc(40vh - 20px);
+  padding: 4px 0;
 }
 
-.bubbles {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  max-width: min(520px, 100%);
-}
-
-.bubble-row {
+.bb-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  max-width: 100%;
+  height: 30px;
+  margin: 0 6px;
+  border-radius: 7px;
+  transition: background 120ms ease;
 }
 
-/* Signal-style: plain text in a rounded bubble, tail corner on the right. */
-.bubble {
-  background: var(--bubble);
-  color: var(--bubble-text);
-  border-radius: 16px 16px 4px 16px;
-  padding: 6px 12px;
-  font-size: 13px;
-  line-height: 1.35;
+.bb-item:hover {
+  background: color-mix(in srgb, var(--c) 8%, transparent);
+}
+
+.bb-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  padding: 0 8px;
   text-align: left;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-width: 100%;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  color: color-mix(in srgb, var(--text) 86%, transparent);
+  font-size: 12.5px;
 }
 
-.bubble:hover {
-  filter: brightness(1.12);
-}
-
-.bubble-x {
-  color: var(--muted);
-  opacity: 0;
+.bb-item-n {
+  flex: none;
   width: 16px;
-  font-size: 14px;
+  color: var(--c);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-.bubble-row:hover .bubble-x {
+.bb-item-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bb-item:hover .bb-item-main {
+  color: var(--text);
+}
+
+/* Send now / edit / remove: shown on hover, over the end of the text. */
+.bb-item-actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  display: flex;
+  gap: 2px;
+  padding-left: 18px;
+  transform: translateY(-50%);
+  background: linear-gradient(to right, transparent, color-mix(in srgb, var(--c) 8%, var(--term-bg)) 18px);
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.bb-item:hover .bb-item-actions,
+.bb-item:focus-within .bb-item-actions {
   opacity: 1;
+  pointer-events: auto;
 }
 
-.composer {
-  width: min(520px, 100%);
+.bb-item-actions button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--text) 70%, transparent);
+  transition: color 120ms ease, background 120ms ease;
 }
 
-.composer textarea {
+.bb-item-actions button:hover {
+  color: var(--c);
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+
+.bb-item-actions button.is-remove:hover {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.14);
+}
+
+/* Inline composer at the bottom of the queue. */
+.bb-composer {
+  margin: 4px 8px 6px;
+}
+
+.bb-composer textarea {
   width: 100%;
   resize: none;
-  border-radius: 16px;
-  padding: 7px 12px;
-  line-height: 1.35;
-  background: var(--panel);
+  border-radius: 8px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--border));
+  background: color-mix(in srgb, var(--c) 5%, var(--panel));
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.4;
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 10%, transparent);
 }
 
-.composer-hold textarea {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+/* It grows with its text (up to a few lines), so no scrollbar while it fits. */
+.bb-composer textarea {
+  scrollbar-width: none;
+}
+
+.bb-composer textarea::placeholder {
+  color: var(--muted);
+}
+
+.bb-chip {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  color: var(--c);
+  font-size: 10.5px;
+  font-weight: 600;
 }
 
 /* ------------------------------------------------------------------ modals */
@@ -851,20 +1019,43 @@ textarea.json {
 
 /* ------------------------------------------------------------------ browser-mode additions */
 
+/* New terminal: a real button (solid, raised a touch), same shape as before. */
 .add-session {
   align-self: stretch;
   height: 34px;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  color: var(--muted);
-  font-size: 18px;
+  border: 1px solid color-mix(in srgb, var(--text) 12%, var(--border));
+  border-radius: 8px;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--text) 7%, var(--panel)), var(--panel));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+  color: color-mix(in srgb, var(--text) 72%, transparent);
+  font-size: 19px;
+  font-weight: 500;
   line-height: 1;
   flex: none;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 160ms ease, transform 90ms ease;
 }
 
 .add-session:hover {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--text) 25%, var(--border));
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--accent) 10%, var(--panel)), color-mix(in srgb, var(--accent) 4%, var(--panel)));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--accent) 12%, transparent),
+    0 0 14px -4px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.add-session:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.add-session:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
 }
 
 .add-session.big {
@@ -947,8 +1138,7 @@ textarea.json {
   filter: drop-shadow(0 0 1px color-mix(in srgb, var(--term-fg) 50%, transparent));
 }
 
-[data-crt='on'] .header-title,
-[data-crt='on'] .bubble {
+[data-crt='on'] .header-title {
   text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
@@ -984,30 +1174,16 @@ textarea.json {
   transition: opacity calc(var(--slot-ms) * 0.4) ease;
 }
 
-/* The Stage drives the minis' opacity inline during a flight; these are the resting states. */
-.slot.is-big .mini,
-.slot.is-landing .mini {
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* The empty place: a faint outline and a dot in the middle, so it's obvious which one is out. */
+/* The big terminal's session keeps its live thumbnail in the stack; the connector draws a dot
+   in the middle of it and a line to the big terminal. This is just the dot's anchor. */
 .slot-marker {
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed color-mix(in srgb, var(--c) 28%, transparent);
-  border-radius: 6px;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity calc(var(--slot-ms) * 0.5) ease;
-}
-
-.slot.is-big .slot-marker {
-  opacity: 1;
-  transition-delay: calc(var(--slot-ms) * 0.4);
 }
 
 /* Anchor for the connector, which draws the visible dot so it can glide between slots. */
@@ -1221,7 +1397,8 @@ textarea.json {
   position: absolute;
   left: 12px;
   right: 0;
-  bottom: -1px;
+  /* Same pixel row as the main header's bottom border, so the two meet as one line. */
+  bottom: 0;
   height: 1px;
   background: linear-gradient(to right, transparent, var(--border) 40%);
 }
@@ -1246,19 +1423,6 @@ textarea.json {
   letter-spacing: 0.015em;
 }
 
-.stack-count {
-  min-width: 20px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 16px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
 
 [data-crt='on'] .stack-wordmark {
   text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 45%, transparent);
@@ -1394,26 +1558,26 @@ textarea.json {
 
 /* ------------------------------------------------------------------ slot badge */
 
-/* Depth in the stack, bottom-right of each thumbnail. Hovering the slot opens it leftward to
-   show the session's title (Claude's title, or "Session N"). */
+/* "1 │ name", bottom-left of each thumbnail: depth in the stack, then the session's name (Claude's
+   title, a name you gave it, or "Session N"). Always shown; long names fade at the edge and
+   scroll on hover. */
 .slot-badge {
   position: absolute;
-  right: 9px;
+  left: 9px;
   bottom: 9px;
   z-index: 3;
   display: flex;
   align-items: center;
+  gap: 8px;
   max-width: calc(100% - 18px);
   height: 28px;
-  padding: 0 10px;
+  padding: 0 12px 0 11px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--term-bg) 78%, transparent);
+  background: color-mix(in srgb, var(--term-bg) 80%, transparent);
   backdrop-filter: blur(6px);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--c) 40%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--c) 36%, transparent),
     0 2px 10px rgba(0, 0, 0, 0.4);
-  color: var(--c);
-  font-size: 14.5px;
   line-height: 1;
   pointer-events: none;
   transition: box-shadow 260ms cubic-bezier(0.42, 0, 0.58, 1);
@@ -1423,23 +1587,51 @@ textarea.json {
   flex: none;
   min-width: 9px;
   text-align: center;
+  color: var(--c);
+  font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
-.slot-badge-title {
+[data-crt='on'] .slot-badge-n {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--c) 55%, transparent);
+}
+
+.slot-badge-sep {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 1px;
+  height: 13px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--c) 45%, transparent);
+}
+
+.slot-badge-name {
   min-width: 0;
-  max-width: 0;
   overflow: hidden;
   white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--text);
+}
+
+.slot-badge-text {
+  display: inline-block;
+  color: color-mix(in srgb, var(--text) 88%, transparent);
+  font-size: 13px;
   font-weight: 550;
-  opacity: 0;
-  transition:
-    max-width 280ms cubic-bezier(0.42, 0, 0.58, 1),
-    margin 280ms cubic-bezier(0.42, 0, 0.58, 1),
-    opacity 200ms ease;
+  letter-spacing: 0.005em;
+}
+
+/* Cut off: soft fades instead of a hard "…" or a hard cut by the divider. The padding keeps the
+   first letter (at rest) and the last (scrolled to the end) clear of the fades; the negative
+   margin tucks the left padding into the gap so the name doesn't shift. */
+.slot-badge.is-clipped .slot-badge-name {
+  margin-left: -8px;
+  -webkit-mask-image: linear-gradient(to right, transparent 4px, #000 8px, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, transparent 4px, #000 8px, #000 calc(100% - 16px), transparent);
+}
+
+.slot-badge.is-clipped .slot-badge-text {
+  padding: 0 16px 0 8px;
 }
 
 .slot:hover .slot-badge {
@@ -1449,13 +1641,35 @@ textarea.json {
     0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
-.slot:hover .slot-badge-title {
-  max-width: 240px;
-  margin-right: 8px;
-  opacity: 1;
-  transition-delay: 60ms;
+.slot:hover .slot-badge-text {
+  color: var(--text);
 }
 
+/* Read it all: starts gliding the moment you hover, rests at the end, glides back, rests, repeats.
+   Each leg eases on its own (the timing function applies between keyframes). */
+.slot:hover .slot-badge.is-clipped .slot-badge-text {
+  animation: badge-scroll calc(var(--scroll-ms) * 2.5) cubic-bezier(0.42, 0, 0.58, 1) infinite;
+}
+
+@keyframes badge-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  40%,
+  55% {
+    transform: translateX(var(--shift));
+  }
+  92%,
+  100% {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot:hover .slot-badge.is-clipped .slot-badge-text {
+    animation: none;
+  }
+}
 
 .slot-body {
   position: relative;
@@ -1535,12 +1749,17 @@ textarea.json {
 
 .park-title {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 13.5px;
   font-weight: 650;
   letter-spacing: 0.01em;
 }
 
 .park-count {
+  flex: none;
   min-width: 22px;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1550,12 +1769,6 @@ textarea.json {
   line-height: 16px;
   text-align: center;
   font-variant-numeric: tabular-nums;
-}
-
-.park-count.is-empty {
-  background: none;
-  color: var(--muted);
-  font-weight: 500;
 }
 
 .park-chevron {
@@ -1772,7 +1985,7 @@ textarea.json {
 .close-arm {
   position: absolute;
   top: 7px;
-  right: 7px;
+  left: 7px;
   z-index: 4;
   width: 28px;
   height: 28px;
@@ -2726,4 +2939,119 @@ textarea.json {
 .sx-card > .sx-json {
   margin: 0 16px 10px;
   width: calc(100% - 32px);
+}
+
+/* Rubber-band bounce at the stack's ends (lib/overscroll.ts). `translate`, not `transform`, so it
+   composes with dnd-kit's inline transforms on the slots. */
+.stack-list > * {
+  translate: 0 var(--overscroll, 0px);
+}
+
+/* Double-click the header title to rename the session (HeaderTitle.tsx). The input wears the
+   title's exact type so the swap is invisible; only a soft underline in the session colour
+   says it's editable. */
+.header-title.is-renamable {
+  cursor: text;
+}
+
+.header-title-input {
+  field-sizing: content;
+  min-width: 6ch;
+  max-width: min(60vw, 640px);
+  margin: 0;
+  padding: 0 0 1px;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--c) 70%, transparent);
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  caret-color: var(--c);
+  box-shadow: 0 6px 10px -10px color-mix(in srgb, var(--c) 80%, transparent);
+}
+
+.header-title-input::selection {
+  background: color-mix(in srgb, var(--c) 32%, transparent);
+}
+
+/* ------------------------------------------------------------------ sidebar resizer */
+
+/* The stack/terminal divider, draggable. A wide invisible grab area over the 1px border; the
+   line lights up in the accent colour on hover and while dragging. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -1px;
+  bottom: 0;
+  z-index: 30;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.sidebar-resizer:hover::after {
+  opacity: 0.55;
+  transition-delay: 120ms;
+}
+
+.sidebar-resizer.is-dragging::after {
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+/* While dragging: follow the pointer exactly (no grid easing), keep the resize cursor everywhere,
+   and don't select text or let the terminal grab the pointer. */
+.app.is-resizing {
+  transition: none;
+  cursor: col-resize;
+  user-select: none;
+}
+
+.app.is-resizing * {
+  cursor: col-resize !important;
+}
+
+.app.is-resizing .term-layer,
+.app.is-resizing .stack-list {
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ active thumbnail */
+
+/* The session out on the big terminal: its screen goes greyscale (the colour is up on the big
+   terminal now), while its border, label, dot and line keep their colour. Not dimmed, so it
+   doesn't read as parked. */
+.slot .mini-canvas {
+  transition: filter 320ms ease;
+}
+
+.slot.is-big .mini-canvas {
+  filter: grayscale(1);
+}
+
+[data-crt='on'] .slot.is-big .mini-canvas {
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--term-fg) 35%, transparent)) grayscale(1);
+}
+
+/* While the active session is dragged, its tether attaches to the lifted card and draws over it. */
+.slot-connector.is-lifted {
+  z-index: 1000;
+}
+
+.bb-hint + .bb-add {
+  margin-left: 4px;
 }

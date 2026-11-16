@@ -4,8 +4,9 @@ import { findTheme } from '../../shared/themes'
 import type { AppState, QueueItem } from '../../shared/types'
 import { BottomBar, type ComposerMode } from './components/BottomBar'
 import { ConfirmDialog } from './components/ConfirmDialog'
-import { SettingsPanel } from './components/SettingsPanel'
+import { SettingsPanel, type Section } from './components/SettingsPanel'
 import { GearIcon } from './components/icons'
+import { HeaderTitle } from './components/HeaderTitle'
 import { Sidebar } from './components/Sidebar'
 import { focusMainTerminal, Stage, type Preview, type StageVisual } from './components/Stage'
 import { stack } from './lib/port'
@@ -58,6 +59,7 @@ export function App() {
   const [state, setState] = useState<AppState | null>(null)
   const [conn, setConn] = useState<Conn>('connecting')
   const [showSettings, setShowSettings] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<Section | undefined>()
   const [confirmClose, setConfirmClose] = useState<string | null>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [visual, setVisual] = useState<StageVisual>({ bigId: null, landingId: null, ms: 480 })
@@ -118,10 +120,10 @@ export function App() {
     prevActive.current = activeId
   }, [activeId])
 
-  // A half-typed hold draft becomes a bubble on the session it was written for.
+  // A half-typed hold or queue draft is queued on the session it was written for.
   useEffect(() => {
     const c = composerRef.current
-    if (c.mode === 'hold') {
+    if (c.mode === 'hold' || c.mode === 'queue') {
       if (c.text.trim() && c.sessionId && c.sessionId !== activeId) void stack.deliver({ t: 'deliver', id: c.sessionId, text: c.text, mode: 'enqueue' })
       setComposerMode(null)
       setComposerText('')
@@ -173,6 +175,8 @@ export function App() {
   // One capture-phase handler for every key the app (not the terminal) owns.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Typing a session name: every key belongs to that field.
+      if ((e.target as HTMLElement | null)?.closest?.('.header-title-input')) return
       const cmd = shortcut(e)
       if (cmd) {
         e.preventDefault()
@@ -192,7 +196,8 @@ export function App() {
 
   const onFocusTerminal = useCallback(() => {
     if (stateRef.current?.hold) void stack.intent({ t: 'setHold', hold: false })
-    setComposerMode((m) => (m === 'hold' ? null : m))
+    // Back to the terminal: an untouched "+ Add" input closes; a draft stays until Esc or Enter.
+    setComposerMode((m) => (m === 'hold' || (m === 'queue' && !composerRef.current.text.trim()) ? null : m))
   }, [])
 
   const colorOf = useCallback(
@@ -222,8 +227,14 @@ export function App() {
     void deliver(q.text, alt ? (pref === 'load' ? 'send' : 'load') : pref, q.id)
   }
 
+  const onOpenQueue = () => {
+    composerRef.current.sessionId = activeId
+    setComposerText('')
+    setComposerMode('queue')
+  }
+
   const onComposerSubmit = (text: string) => {
-    if (composerMode === 'hold') {
+    if (composerMode === 'hold' || composerMode === 'queue') {
       void deliver(text, 'enqueue')
       setComposerText('')
     } else {
@@ -275,7 +286,7 @@ export function App() {
       <main className="main">
         <header className="header" style={{ ['--c' as string]: active ? sessionColor(theme, active.color) : 'transparent' }}>
           {active && <span className="header-badge">{stackPosition(active)}</span>}
-          <span className="header-title">{active ? displayName(active) : 'No session'}</span>
+          <HeaderTitle session={active} />
           {phase === 'busy' && (
             <span className="header-status is-busy">
               <i />
@@ -357,6 +368,8 @@ export function App() {
 
         <BottomBar
           sessionId={activeId}
+          sessionName={active ? displayName(active) : 'no session'}
+          sessionColor={active ? sessionColor(theme, active.color) : 'var(--accent)'}
           queue={active?.queue ?? []}
           settings={state.settings}
           composerMode={composerMode}
@@ -366,11 +379,27 @@ export function App() {
           onComposerClose={onComposerClose}
           onPill={onPill}
           onBubble={onBubble}
+          onOpenQueue={onOpenQueue}
+          onEditReplies={() => {
+            setSettingsSection('replies')
+            setShowSettings(true)
+          }}
+          onSendQueued={(q) => void deliver(q.text, 'send', q.id)}
+          onLoadQueued={(q) => void deliver(q.text, 'load', q.id)}
           onRemoveBubble={(q) => active && void stack.intent({ t: 'removeQueued', id: active.id, itemId: q.id })}
         />
       </main>
 
-      {showSettings && <SettingsPanel state={state} onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <SettingsPanel
+          state={state}
+          initialSection={settingsSection}
+          onClose={() => {
+            setShowSettings(false)
+            setSettingsSection(undefined)
+          }}
+        />
+      )}
 
       {closing && (
         <ConfirmDialog

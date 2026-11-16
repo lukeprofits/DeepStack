@@ -7,8 +7,8 @@ import { pickColor } from '../shared/palette'
 import type { HostControl, HostEvent, ProcInfo, Snapshot } from '../shared/protocol'
 import { initialRuntime, reduceStatus, type StatusEvent } from '../shared/sessionStatus'
 import { buildSpawnSpec, claudeResumeFlags, resumeInput } from '../shared/spawnSpec'
-import { DEFAULT_SETTINGS } from '../shared/themes'
-import type { AppState, DeliverResult, Intent, PersistedState, Program, SessionConfig, SessionRuntime } from '../shared/types'
+import { DEFAULT_SETTINGS, LEGACY_DEFAULT_PILLS } from '../shared/themes'
+import type { AppState, DeliverResult, Intent, PersistedState, Program, SessionConfig, SessionRuntime, Settings } from '../shared/types'
 import { isClaude } from '../ptyhost/procPoll'
 import { globalHooksInstalled, hooksDisabledByUser, installGlobalHooks, removeGlobalHooks, type HookEvent } from './hookServer'
 import { debounced, readJsonSafe, writeJsonAtomic } from './persist'
@@ -40,6 +40,12 @@ function tooLongToLoad(text: string): boolean {
 }
 
 const READY_FOR_TEXT = ['idle', 'attention', 'shell']
+/** Claude needs a beat after becoming ready before its input box accepts text. */
+const INPUT_READY_MS = 400
+/** Room for a `/rename` to be typed and submitted before a waiting prompt follows it. */
+const RENAME_GAP_MS = 350
+/** After typing /rename, ignore the busy blip it causes for auto-switch purposes. */
+const RENAME_QUIET_MS = 3000
 const SNAPSHOT_EVERY_MS = 60_000
 /** Give up waiting for a resumed Claude to report in. */
 const STARTING_TIMEOUT_MS = 30_000
@@ -52,14 +58,25 @@ function sameProgram(a: Program | undefined, b: Program | undefined): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 }
 
+/** Untouched old defaults move to the current ones; anything the user customised is kept. */
+function upgradeSettings(s: Settings): Settings {
+  if (JSON.stringify(s.pills) === JSON.stringify(LEGACY_DEFAULT_PILLS)) return { ...s, pills: [...DEFAULT_SETTINGS.pills] }
+  return s
+}
+
 /**
  * Single source of truth for app state. Browsers send intents, the pty host and the hook
  * server send events; everything funnels through here and is broadcast back out.
  */
+
 export class Controller {
   state: AppState
   private readonly save = debounced(() => this.persistNow(), 500)
   private pendingSends = new Map<string, string[]>()
+  /** A `/rename` waiting for its Claude session to be ready for input. */
+  private pendingRenames = new Map<string, string>()
+  /** When we last typed /rename into each session. */
+  private renamedAt = new Map<string, number>()
   private snapshots = new Map<string, Snapshot>()
   private snapshotReq = 0
   private snapshotWaiters = new Map<number, (s: Snapshot | null) => void>()
@@ -81,7 +98,7 @@ export class Controller {
     this.state = {
       ...persisted,
       sessions,
-      settings: { ...DEFAULT_SETTINGS, ...persisted.settings },
+      settings: upgradeSettings({ ...DEFAULT_SETTINGS, ...persisted.settings }),
       customThemes: persisted.customThemes ?? [],
       runtime: Object.fromEntries(sessions.map((s) => [s.id, initialRuntime(true)])),
       hold: false,
@@ -110,10 +127,21 @@ export class Controller {
    * focused (or sent to); then its shell starts in the saved cwd and Claude resumes by id.
    * After a host crash, sessions stay in the error state for the user to relaunch.
    */
+  /**
+   * DeepStack is never empty: with no sessions at all (first run, or the last one closed) open a
+   * terminal in ~ and focus it. Returns true if it made one.
+   */
+  private ensureOneSession(): boolean {
+    if (this.state.sessions.length > 0) return false
+    this.intent({ t: 'create' })
+    this.changed()
+    return true
+  }
+
   restoreOnce(): void {
     if (this.restored) return
     this.restored = true
-    if (this.state.activeId) this.spawn(this.state.activeId)
+    if (!this.ensureOneSession() && this.state.activeId) this.spawn(this.state.activeId)
     this.snapshotTimer = setInterval(() => void this.snapshotAll(), SNAPSHOT_EVERY_MS)
     this.broadcast()
   }
@@ -224,8 +252,11 @@ export class Controller {
       s.autoName = res.autoName
       dirty = persist = true
     }
-    if (READY_FOR_TEXT.includes(res.rt.phase)) this.flushPending(id)
-    if (res.sentOff && !this.state.hold && this.state.settings.advanceMode !== 'off') this.startSendOff(id)
+    const renamed = this.flushRename(id, res.rt.phase)
+    if (READY_FOR_TEXT.includes(res.rt.phase)) this.flushPending(id, renamed ? RENAME_GAP_MS : 0)
+    // Claude flashes busy while it runs our /rename; that's not a prompt being sent.
+    const renaming = Date.now() - (this.renamedAt.get(id) ?? 0) < RENAME_QUIET_MS
+    if (res.sentOff && !renaming && !this.state.hold && this.state.settings.advanceMode !== 'off') this.startSendOff(id)
     this.maybeSnap(id, before.phase, res.rt.phase)
     if (dirty && ev.k !== 'input') this.changed(persist)
   }
@@ -363,24 +394,65 @@ export class Controller {
 
   // ---------------------------------------------------------------- text delivery
 
-  private writeText(id: string, text: string, submit: boolean): void {
+  /** `asInput: false` for our own commands (e.g. /rename), which must never count as a sent prompt. */
+  private writeText(id: string, text: string, submit: boolean, asInput = true): void {
     const data = text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text
     this.deps.host({ t: 'write', id, data })
-    this.rt(id).lastInputAt = Date.now()
+    if (asInput) this.rt(id).lastInputAt = Date.now()
     // Give Claude's input a moment to finish processing the paste before Enter, or the
     // Enter can be swallowed as part of the paste.
     if (submit) setTimeout(() => this.deps.host({ t: 'write', id, data: '\r' }), 80)
   }
 
-  private flushPending(id: string): void {
+  private flushPending(id: string, extraDelay = 0): void {
     const pending = this.pendingSends.get(id)
     if (!pending?.length) return
     this.pendingSends.delete(id)
     const [first, ...rest] = pending
     // Claude needs a beat after starting before its input box accepts text.
-    setTimeout(() => this.writeText(id, first, true), 400)
+    setTimeout(() => this.writeText(id, first, true), INPUT_READY_MS + extraDelay)
     // Only one prompt can be sent per turn; the rest go back to the queue.
     for (const text of rest) this.enqueue(id, text)
+  }
+
+  /** Send a waiting `/rename` once Claude can take input. True if one went out. */
+  private sendRename(id: string, name: string): void {
+    this.renamedAt.set(id, Date.now())
+    this.writeText(id, `/rename ${name}`, true, false)
+  }
+
+  private flushRename(id: string, phase: string): boolean {
+    const name = this.pendingRenames.get(id)
+    if (!name || (phase !== 'idle' && phase !== 'attention')) return false
+    this.pendingRenames.delete(id)
+    setTimeout(() => this.sendRename(id, name), INPUT_READY_MS)
+    return true
+  }
+
+  private retitle(id: string, raw: string): void {
+    const s = this.session(id)
+    const name = raw.replace(/\s+/g, ' ').trim()
+    if (!s || !name) return
+    const phase = this.rt(id).phase
+    // The header shows the new name right away; Claude's own title update then confirms the same
+    // value, so nothing flickers in between.
+    s.name = undefined
+    s.autoName = name
+    if (s.program?.kind !== 'claude' || phase === 'shell' || phase === 'exited' || phase === 'error') {
+      // No Claude to tell: a plain name.
+      s.name = name
+      s.autoName = undefined
+      return
+    }
+    if (phase === 'idle' || phase === 'attention') {
+      this.pendingRenames.delete(id)
+      // Slash commands don't fire UserPromptSubmit, so this never triggers an auto-advance.
+      this.sendRename(id, name)
+      return
+    }
+    // Busy (don't type into a running turn) or not started yet: send it when it's ready.
+    this.pendingRenames.set(id, name)
+    this.ensureSpawned(id)
   }
 
   private enqueue(id: string, text: string): void {
@@ -517,6 +589,7 @@ export class Controller {
         this.pendingSends.delete(i.id)
         this.snapshots.delete(i.id)
         rmSync(join(this.deps.paths.snapshots, `${i.id}.json`), { force: true })
+        if (this.ensureOneSession()) return
         if (st.activeId === i.id) {
           const next = nextSession(st.sessions, st.runtime, null, 'priority', false) ?? st.sessions[0]?.id ?? null
           if (next) this.activate(next)
@@ -547,6 +620,10 @@ export class Controller {
         this.changed()
         return
       }
+      case 'retitle':
+        this.retitle(i.id, i.name)
+        this.changed()
+        return
       case 'setColor': {
         const s = this.session(i.id)
         if (s) s.color = i.color

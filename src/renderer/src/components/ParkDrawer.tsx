@@ -49,7 +49,7 @@ export function ParkSection({ parked, renderSlot, open, onToggle, ateKey, ateCol
       >
         <ParkIcon />
         <span className="park-title">Parked</span>
-        <span className={['park-count', n ? '' : 'is-empty'].join(' ')}>{n || 'none'}</span>
+        {n > 0 && <span className="park-count">{n}</span>}
         <Chevron open={open} />
       </button>
       <div ref={setNodeRef} className={['park-items', open ? 'is-open' : ''].join(' ')} inert={!open}>

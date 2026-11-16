@@ -158,6 +158,8 @@ export type Intent =
   | { t: 'move'; id: string; inactive: boolean; index: number }
   | { t: 'relaunch'; id: string }
   | { t: 'rename'; id: string; name: string }
+  /** Rename from the header: Claude sessions get it as `/rename`, so Claude owns the name. */
+  | { t: 'retitle'; id: string; name: string }
   | { t: 'setColor'; id: string; color: string }
   | { t: 'setResumeOverride'; id: string; command: string }
   | { t: 'enqueue'; id: string; text: string }

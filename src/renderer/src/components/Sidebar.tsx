@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -19,7 +19,9 @@ import type { AppState, SessionConfig, SessionRuntime, Theme } from '../../../sh
 import { sessionColor } from '../lib/theme'
 import { displayName, stackPosition } from '../lib/session'
 import { stack } from '../lib/port'
+import { attachBounce } from '../lib/overscroll'
 import { MiniCanvas } from './MiniCanvas'
+import { SidebarResizer } from './SidebarResizer'
 import type { StageVisual } from './Stage'
 import { ParkInvite, ParkSection, ZONE_PARKED } from './ParkDrawer'
 
@@ -35,7 +37,6 @@ interface Props {
 }
 
 const ZONE_ACTIVE = 'zone:active'
-const PARK_OPEN_KEY = 'deepstack.parkOpen'
 
 interface SlotProps {
   onRequestClose: (id: string) => void
@@ -94,11 +95,7 @@ function Slot({ s, rt, theme, big, landing, onRequestClose }: SlotProps) {
             </div>
           )}
         </div>
-        {/* Depth in the stack; hovering opens it up to show the title. */}
-        <div className="slot-badge">
-          <span className="slot-badge-title">{displayName(s)}</span>
-          <span className="slot-badge-n">{stackPosition(s)}</span>
-        </div>
+        <SlotLabel n={stackPosition(s)} name={displayName(s)} />
         <CloseArm name={displayName(s)} onArmedClick={() => onRequestClose(s.id)} />
       </div>
     </div>
@@ -148,6 +145,50 @@ function CloseArm({ name, onArmedClick }: { name: string; onArmedClick: () => vo
   )
 }
 
+/**
+ * "1 │ name" on each thumbnail: depth in the stack, then the session's name. A name too long
+ * for the thumbnail fades out at the edge and, on hover, scrolls to show the rest.
+ */
+function SlotLabel({ n, name }: { n: number; name: string }) {
+  const box = useRef<HTMLSpanElement>(null)
+  const text = useRef<HTMLSpanElement>(null)
+  const [overflow, setOverflow] = useState(0)
+
+  useLayoutEffect(() => {
+    const b = box.current
+    const t = text.current
+    if (!b || !t) return
+    const measure = () => {
+      const o = t.scrollWidth - b.clientWidth
+      setOverflow(o > 1 ? o : 0)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(b)
+    ro.observe(t)
+    return () => ro.disconnect()
+  }, [name])
+
+  return (
+    <div
+      className={`slot-badge ${overflow ? 'is-clipped' : ''}`}
+      style={{
+        ['--shift' as string]: `${-overflow}px`,
+        // Same reading speed whatever the length.
+        ['--scroll-ms' as string]: `${Math.round(Math.max(1400, overflow * 32))}ms`
+      }}
+    >
+      <span className="slot-badge-n">{n}</span>
+      <span className="slot-badge-sep" aria-hidden />
+      <span className="slot-badge-name" ref={box}>
+        <span className="slot-badge-text" ref={text}>
+          {name}
+        </span>
+      </span>
+    </div>
+  )
+}
+
 /** The lifted copy that follows the pointer while a session is dragged. */
 function DragCard({ s, theme, origin, overPark }: { s: SessionConfig; theme: Theme; origin: string; overPark: boolean }) {
   return (
@@ -155,19 +196,9 @@ function DragCard({ s, theme, origin, overPark }: { s: SessionConfig; theme: The
       <div className="mini">
         <MiniCanvas id={s.id} foreground={theme.terminal.foreground} fontFamily={theme.ui.monoFont} useSnapshot={false} />
       </div>
-      <div className="slot-badge">
-        <span className="slot-badge-n">{stackPosition(s)}</span>
-      </div>
+      <SlotLabel n={stackPosition(s)} name={displayName(s)} />
     </div>
   )
-}
-
-function loadParkOpen(): boolean {
-  try {
-    return localStorage.getItem(PARK_OPEN_KEY) === '1'
-  } catch {
-    return false
-  }
 }
 
 const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -233,10 +264,18 @@ function StackMark() {
   )
 }
 
-function Zone({ id, className, children }: { id: string; className: string; children: ReactNode }) {
+function Zone({ id, className, bounce, children }: { id: string; className: string; bounce?: boolean; children: ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id })
+  const el = useRef<HTMLDivElement | null>(null)
+  useEffect(() => (bounce && el.current ? attachBounce(el.current) : undefined), [bounce])
   return (
-    <div ref={setNodeRef} className={`${className} ${isOver ? 'is-over' : ''}`}>
+    <div
+      ref={(node) => {
+        el.current = node
+        setNodeRef(node)
+      }}
+      className={`${className} ${isOver ? 'is-over' : ''}`}
+    >
       {children}
     </div>
   )
@@ -256,18 +295,12 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
   const [dragId, setDragId] = useState<string | null>(null)
   const [overPark, setOverPark] = useState(false)
   const [origin, setOrigin] = useState('50% 50%')
-  const [parkOpen, setParkOpen] = useState(loadParkOpen)
+  // Parked starts closed on every load: those sessions are out of the way until you ask.
+  const [parkOpen, setParkOpen] = useState(false)
   const [ate, setAte] = useState<{ key: number; color: string | null }>({ key: 0, color: null })
   const dragged = dragId ? state.sessions.find((s) => s.id === dragId) : undefined
   const draggingFromStack = !!dragged && !dragged.inactive
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(PARK_OPEN_KEY, parkOpen ? '1' : '0')
-    } catch {
-      /* private window: not remembered */
-    }
-  }, [parkOpen])
 
   // A session joined the parked list (drop or ⌃⇧I): the bar pops and flashes its colour.
   const parkedIds = inactive.map((s) => s.id).join(',')
@@ -327,7 +360,6 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
     else move()
   }
 
-  const countTitle = `${active.length} in the stack${inactive.length ? ` · ${inactive.length} parked` : ''}`
 
   const slot = (s: SessionConfig) => (
     <Slot
@@ -380,10 +412,9 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
   return (
     <aside className="sidebar" style={{ ['--slot-ms' as string]: `${visual.ms}ms` }}>
       <div className="sidebar-drag">
-        <div className="stack-title" title={countTitle}>
+        <div className="stack-title">
           <StackMark />
           <span className="stack-wordmark">DeepStack</span>
-          <span className="stack-count">{active.length}</span>
         </div>
         <button className="drawer-toggle" onClick={onToggle} title="Collapse stack (⌃⇧B)" aria-label="Collapse stack">
           <Chevron dir="left" />
@@ -403,7 +434,7 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
       >
         {/* One list in two parts: the stack, then "Parked" (greyscale) under its heading. */}
         <div className="stack-area">
-          <Zone id={ZONE_ACTIVE} className="stack-list">
+          <Zone id={ZONE_ACTIVE} className="stack-list" bounce>
             <SortableContext items={active.map((s) => s.id)} strategy={verticalListSortingStrategy}>
               {active.map(slot)}
             </SortableContext>
@@ -426,6 +457,7 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
           {dragged && <DragCard s={dragged} theme={theme} origin={origin} overPark={overPark && !dragged.inactive} />}
         </DragOverlay>
       </DndContext>
+      <SidebarResizer />
     </aside>
   )
 }

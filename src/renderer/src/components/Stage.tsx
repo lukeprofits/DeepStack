@@ -81,6 +81,9 @@ const easeIn = cubicBezier(0.3, 0, 0.2, 1)
 
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p
 
+/** After the stack changes, keep re-placing the tether this long (covers the slots' glide). */
+const FOLLOW_MS = 450
+
 /**
  * The part of the stack's scroll area where `el` can actually be seen: the scroll list, minus
  * the "Parked" heading pinned over its bottom (which covers stack slots, never parked ones).
@@ -117,8 +120,16 @@ const DOT_CORE = 7
  * Centre of a session's marker dot plus the visible band of the list it scrolls in. Null only
  * once the dot (halo included) has scrolled fully out of that band; until then it's clipped.
  */
-function markerCenter(id: string): { x: number; y: number; clipTop: number; clipBottom: number } | null {
-  const dot = slotEl(id)?.querySelector<HTMLElement>('.slot-marker-dot')
+function markerCenter(id: string): { x: number; y: number; clipTop: number; clipBottom: number; lifted?: boolean } | null {
+  const slot = slotEl(id)
+  // Being dragged: the session is the lifted card under the pointer now, so the tether follows
+  // that (unclipped, since the card floats over everything) rather than the empty placeholder.
+  if (slot?.classList.contains('is-dragging')) {
+    const card = document.querySelector<HTMLElement>('.drag-card')?.getBoundingClientRect()
+    if (!card || card.width === 0) return null
+    return { x: card.left + card.width / 2, y: card.top + card.height / 2, clipTop: 0, clipBottom: window.innerHeight, lifted: true }
+  }
+  const dot = slot?.querySelector<HTMLElement>('.slot-marker-dot')
   const list = dot ? visibleBand(dot) : null
   const d = dot?.getBoundingClientRect()
   if (!d || !list || d.width === 0) return null
@@ -230,6 +241,7 @@ export function Stage(props: Props) {
       // Clip to the band the stack scrolls in: the dot and line slide under the header (or the
       // parked drawer) instead of drawing over it.
       svg.style.clipPath = `inset(${d.clipTop}px 0 ${Math.max(0, window.innerHeight - d.clipBottom)}px 0)`
+      svg.classList.toggle('is-lifted', !!d.lifted)
       // As the dot slides out of view the whole tether fades with it, so the bend into the
       // window never lingers on its own looking attached to something off screen.
       const shown = clamp01(Math.min(d.y - d.clipTop, d.clipBottom - d.y) / (2 * DOT_CORE) + 0.5)
@@ -289,24 +301,9 @@ export function Stage(props: Props) {
       void stage.offsetWidth
       requestAnimationFrame(() => (stage.style.transition = ''))
     }
-    for (const m of touched.current) {
-      m.style.opacity = ''
-      m.style.transition = ''
-    }
-    touched.current.clear()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled])
 
-  /** Mini elements whose opacity the flight drives inline; cleared once the switch is committed to the DOM. */
-  const touched = useRef(new Set<HTMLElement>())
-
-  const setMini = (id: string, opacity: number) => {
-    const mini = slotEl(id)?.querySelector<HTMLElement>('.mini')
-    if (!mini) return
-    touched.current.add(mini)
-    mini.style.transition = 'none'
-    mini.style.opacity = String(opacity)
-  }
 
   /**
    * Put one layer on its way between the big terminal and a slot.
@@ -329,7 +326,6 @@ export function Stage(props: Props) {
       el.style.opacity = String(1 - q)
       if (ghost) ghost.style.opacity = '0'
       if (plate) plate.style.opacity = '0'
-      setMini(id, q)
       return null
     }
     const s = lerp(1, r.width / mw, q)
@@ -342,7 +338,6 @@ export function Stage(props: Props) {
     el.style.clipPath = `inset(0 0 ${inset}px 0 round ${lerp(8, 6, q) / s}px)`
     const o = copyOpacity(q)
     el.style.opacity = String(o)
-    setMini(id, 1 - o)
     // The window's frame: the stage's own border at q=0, the slot's at q=1.
     const st = stage.getBoundingClientRect()
     const gLeft = lerp(st.left, r.left, q)
@@ -479,7 +474,8 @@ export function Stage(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // At rest, keep the connector on the big session's dot as the stack scrolls or the window resizes.
+  // At rest, keep the connector on the big session's dot as the stack scrolls, the window resizes,
+  // or slots move (reorder, drag, park, open/close Parked).
   useEffect(() => {
     if (animating) return
     const update = () => {
@@ -493,10 +489,31 @@ export function Stage(props: Props) {
     const r1 = requestAnimationFrame(update)
     const ro = new ResizeObserver(update)
     if (frameRef.current) ro.observe(frameRef.current)
+    // Slots move without scrolling: a reorder re-renders them, a drag shifts them with inline
+    // transforms, and both glide with CSS transitions. On any such change, follow every frame
+    // until things have been still for a moment.
+    let follow = 0
+    let until = 0
+    const tick = () => {
+      update()
+      follow = performance.now() < until ? requestAnimationFrame(tick) : 0
+    }
+    const moved = () => {
+      until = performance.now() + FOLLOW_MS
+      if (!follow) follow = requestAnimationFrame(tick)
+    }
+    // The whole sidebar: the lifted drag card lives outside the stack area.
+    const area = document.querySelector('.sidebar')
+    const mo = new MutationObserver(moved)
+    if (area) mo.observe(area, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'class'] })
+    area?.addEventListener('transitionrun', moved)
     document.addEventListener('scroll', update, true)
     window.addEventListener('resize', update)
     return () => {
       cancelAnimationFrame(r1)
+      cancelAnimationFrame(follow)
+      mo.disconnect()
+      area?.removeEventListener('transitionrun', moved)
       ro.disconnect()
       document.removeEventListener('scroll', update, true)
       window.removeEventListener('resize', update)
