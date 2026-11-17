@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { homedir } from 'node:os'
@@ -19,9 +20,12 @@ const MARKER = 'STACK_SOCK'
  * Socket lives under /tmp because macOS caps unix socket paths at 104 bytes, which the
  * Application Support path can exceed. The directory is 0700 and every request must carry
  * a known session id, so other users can't reach it and stray processes can't spoof state.
+ * The default data dir keeps the plain name; any other one (a second or test instance via
+ * STACK_DATA_DIR) gets its own socket, so it can never replace the main one's.
  */
-export function hookSocketPath(): string {
-  return join('/tmp', `stack-${process.getuid?.() ?? 'user'}`, 'h.sock')
+export function hookSocketPath(dataDir: string, defaultDir: string): string {
+  const name = dataDir === defaultDir ? 'h.sock' : `h-${createHash('sha1').update(dataDir).digest('hex').slice(0, 10)}.sock`
+  return join('/tmp', `stack-${process.getuid?.() ?? 'user'}`, name)
 }
 
 /**

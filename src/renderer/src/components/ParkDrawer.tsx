@@ -66,6 +66,32 @@ export function ParkSection({ parked, renderSlot, open, onToggle, ateKey, ateCol
   )
 }
 
+const UnparkIcon = () => (
+  <svg className="park-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M12 19V6M6 11l6-6 6 6" />
+    <path d="M5 21h14" />
+  </svg>
+)
+
+/**
+ * The other way round: while a parked session is dragged, the stack frames itself and offers
+ * to take it back; a glowing line between slots shows where it will land (see Sidebar). Also
+ * purely an overlay, so the list doesn't reflow under the drag.
+ */
+export function StackInvite({ visible, over }: { visible: boolean; over: boolean }) {
+  return (
+    <div className={['stack-invite', visible ? 'is-visible' : '', over ? 'is-over' : ''].join(' ')} aria-hidden={!visible}>
+      <div className="stack-invite-tag">
+        <UnparkIcon />
+        <div className="park-invite-copy">
+          <div className="park-invite-title">{over ? 'Release to unpark' : 'Back to the stack?'}</div>
+          <div className="park-invite-sub">{over ? 'It lands at the glowing line.' : 'Drag it up here. Auto-switch picks it up again.'}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /**
  * While a stack session is dragged, the bottom of the sidebar leans up and offers to take it.
  * Purely an overlay (nothing in the list reflows mid-drag); gone again on release.

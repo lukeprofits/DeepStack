@@ -1,5 +1,7 @@
 // Message contracts: server <-> pty host (child process IPC) and server <-> browser (WebSocket).
 
+import type { SendOffReason } from './types'
+
 export interface SpawnSpec {
   id: string
   file: string
@@ -74,7 +76,7 @@ export type ClientMsg =
 export type ServerMsg =
   | { t: 'rpc'; rid: number; ok: boolean; value?: unknown; error?: string }
   | { t: 'state'; state: unknown }
-  | { t: 'sendOff'; id: string; target: string; ms: number }
+  | { t: 'sendOff'; id: string; target: string; ms: number; reason: SendOffReason; left: number }
   | { t: 'snap'; id: string; from: string | null }
   | { t: 'data'; id: string; seq: number; d: string }
   | { t: 'attached'; id: string; seq: number; ansi: string; live: boolean }

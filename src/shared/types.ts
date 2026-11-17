@@ -50,6 +50,11 @@ export interface SessionRuntime {
   lastInputAt: number
   /** When the session entered attention (ms epoch). */
   attentionAt?: number
+  /**
+   * Idle, but a background task it started (a long command, an async agent) is still running:
+   * Claude picks up by itself when it reports back, so this isn't waiting on the human.
+   */
+  background?: boolean
 }
 
 export type AdvanceMode = 'priority' | 'sequential' | 'off'
@@ -65,6 +70,11 @@ export interface Settings {
    * switch to it, even mid-typing. Whatever was typed stays in that terminal's input.
    */
   snapToHigher: boolean
+  /**
+   * A permission prompt in another session pulls you to it (after a send-off preview, once
+   * you've paused typing); answer it and you're taken to the next one, then back where you were.
+   */
+  grabApprovals: boolean
   /** Open in its own window (Electron) instead of a browser tab. */
   standalone: boolean
   bubbleClick: 'load' | 'send'
@@ -77,6 +87,10 @@ export interface Settings {
   fxIntensity: number
   /** Matrix: the big red "HACKING..." banner that flashes over the terminal while typing. */
   hackBanner: boolean
+  /** Custom words for the banner instead of "HACKING..."; one is picked each time you start typing again. */
+  hackTexts: string[]
+  /** 90s Hacker: the chrome tears, shakes and fringes while you type (never the terminals). */
+  typingGlitch: boolean
 }
 
 export interface ThemeUi {
@@ -171,6 +185,8 @@ export type Intent =
   | { t: 'setResumeOverride'; id: string; command: string }
   | { t: 'enqueue'; id: string; text: string }
   | { t: 'removeQueued'; id: string; itemId: string }
+  /** New text for a queued message; it keeps its place. Empty text removes it. */
+  | { t: 'updateQueued'; id: string; itemId: string; text: string }
   | { t: 'deliver'; id: string; text: string; mode: DeliverMode; itemId?: string }
   | { t: 'resize'; cols: number; rows: number }
   | { t: 'advance' }
@@ -188,13 +204,19 @@ export interface DeliverResult {
   loadIntoComposer?: string
 }
 
-/** Sent server -> client when the focused session was sent off to Claude. */
+/** Why a switch is coming: an ordinary send-off, or a step of an approval run. */
+export type SendOffReason = 'sendOff' | 'approval' | 'next' | 'return'
+
+/** Sent server -> client when a switch is about to happen (Space cancels it). */
 export interface SendOffEvent {
   id: string
   /** Where the advance will go, so the UI can animate toward it. */
   target: string | null
   at: number
   ms: number
+  reason: SendOffReason
+  /** Approvals still waiting after this one. */
+  left: number
 }
 
 /** Sent server -> client when snap mode switched focus without being asked. */

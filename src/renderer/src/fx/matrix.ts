@@ -9,19 +9,27 @@
  *  - live: data pulses running along traces, flickering nodes, scrambling glyphs and HUD
  *    readouts, and every few seconds a short glitch tear. Its rate scales with `intensity`.
  */
+import { fxField } from '../lib/fxField'
 
 export interface MatrixFx {
   setIntensity(intensity: number): void
+  /** Whether typing tears and shakes the chrome (the backdrop still livens up either way). */
+  setTypingGlitch(on: boolean): void
+  /** Custom banner texts (empty: "HACKING..."). */
+  setHackTexts(texts: string[]): void
   /** Force a glitch now (also exposed as window.__fxGlitch for poking at it). */
   glitch(): void
   /** A surge of activity (fired on every keystroke). */
   burst(): void
+  /** The current parallax offset, about -1.5..1.5 each way (for layers drawn elsewhere, like the overlay). */
+  parallax(): [number, number]
   stop(): void
 }
 
 interface Opts {
   intensity: number
   accent: string
+  typingGlitch?: boolean
 }
 
 type Pt = { x: number; y: number }
@@ -36,11 +44,20 @@ const GLYPHS = 'ΑΒΓΔΘΛΞΠΣΦΨΩαβγδλμπσφψωアイウエオカ
 const TAGS = ['ERR.958', 'SYS//LINK', 'SIGNAL // λόγος', '0x3F·A1', 'NODE 07', 'TRACE ∆', 'BUS.4', 'SYNC', 'PKT', 'MEM 0xA4']
 const GRID = 8
 /** Extra board drawn past each edge so parallax never reveals an edge. */
-const OVERSCAN = 140
+const OVERSCAN = 200
 /** How far each depth travels (px) at full pointer deflection: further away moves less. */
 // Far things barely move, near things swing a long way: the spread is what reads as depth.
 const DEPTH = { far: 6, fog: 22, near: 34, bokehMin: 30, bokehMax: 125 }
+/** How far the mouse swings the parallax: 1 = each depth travels its DEPTH px at the screen edge. */
+const PARALLAX_GAIN = 1.5
 /** Raining code on three planes: far (small, dim, slow, nearly still), mid, near (big, bright, fast). */
+/**
+ * Now and then a rain streak glitches: a red / cyan chromatic split on its glyphs and a run of
+ * them torn sideways, re-rolled every `step` ms for `ms`. `rate` is starts per streak per second
+ * at rest (~3% glitching at once); mouse speed and typing multiply it. split/tear are px at the
+ * mid plane (near splits wider, far narrower).
+ */
+const RAIN_GLITCH = { rate: 0.17, ms: [90, 260], step: [35, 70], split: [1.5, 4.5], tear: [4, 14] }
 const RAIN_PLANES = [
   { share: 0.22, size: 10, step: 11, alpha: 0.24, speed: 0.55, depth: 14, glow: false },
   { share: 0.43, size: 14, step: 15, alpha: 0.75, speed: 1, depth: 52, glow: true },
@@ -107,7 +124,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   let VW = 0
   let VH = 0
   // Parallax: the HUD stays put and the world behind it shifts with the pointer (plus a slow
-  // idle drift), each depth by its own amount. px/py run -1..1, eased toward the target.
+  // idle drift), each depth by its own amount. px/py run about -1.5..1.5 (PARALLAX_GAIN), eased toward the target.
   let px = 0
   let py = 0
   let tx = 0
@@ -137,7 +154,8 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   let boost = 0
   let flickerDebt = 0
   let hubs: Pt[] = []
-  let rain: { x: number; y: number; v: number; len: number; chars: string[]; z: number }[] = []
+  /** g*: the streak's glitch (see RAIN_GLITCH): ends at gUntil, re-rolls at gNext; glyphs gA..gB tear by gT. */
+  let rain: { x: number; y: number; v: number; len: number; chars: string[]; z: number; gUntil: number; gNext: number; gDx: number; gA: number; gB: number; gT: number }[] = []
   let rings: { x: number; y: number; age: number }[] = []
   let sweepY = -1
   let nextSweep = 0
@@ -822,7 +840,48 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     drawAtmosphere(now, dt)
     drawWave(now, dt)
     drawGlitch(now)
+    drawField(now)
     elementGlitch(now)
+  }
+
+  /**
+   * The force field around a window swinging on its hinge (lib/fxField, written by Stage): the
+   * backdrop around it ripples in thin strips like heat haze, and now and then a strip tears.
+   */
+  /** One copy of the region per frame to slice strips from (drawing a canvas onto itself makes
+      Chrome copy the whole canvas for every strip). */
+  let fieldBuf: HTMLCanvasElement | null = null
+  function drawField(now: number): void {
+    for (const f of fxField) {
+      if (f.s < 0.02 || reduced) continue
+      const pad = 80
+      const x0 = Math.max(0, Math.floor((f.x0 - pad) * dpr))
+      const x1 = Math.min(canvas.width, Math.ceil((f.x1 + pad) * dpr))
+      const y0 = Math.max(0, Math.floor((f.y0 - pad) * dpr))
+      const y1 = Math.min(canvas.height, Math.ceil((f.y1 + pad) * dpr))
+      if (x1 - x0 < 4 || y1 - y0 < 4) continue
+      const w = x1 - x0
+      const hh = y1 - y0
+      fieldBuf ??= document.createElement('canvas')
+      if (fieldBuf.width < w || fieldBuf.height < hh) {
+        fieldBuf.width = Math.max(fieldBuf.width, canvas.width)
+        fieldBuf.height = Math.max(fieldBuf.height, canvas.height)
+      }
+      const fb = fieldBuf.getContext('2d')
+      if (!fb) continue
+      fb.clearRect(0, 0, w, hh)
+      fb.drawImage(canvas, x0, y0, w, hh, 0, 0, w, hh)
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      for (let y = y0; y < y1; ) {
+        const h = Math.max(1, Math.round((4 + rand() * 10) * dpr))
+        const wave = Math.sin((y / dpr) * 0.05 + now * 0.011) * 6 + Math.sin((y / dpr) * 0.013 - now * 0.007) * 4
+        const tear = rand() < 0.05 ? (rand() - 0.5) * 70 : 0
+        const dx = Math.round((wave + tear) * f.s * dpr)
+        if (dx) ctx.drawImage(fieldBuf, 0, y - y0, w, h, x0 + dx, y, w, h)
+        y += h
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
   }
 
   /** Falling columns of code. Heads are bright, tails fade; characters keep mutating. */
@@ -838,15 +897,63 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       v: (170 + rand() * 280) * pl.speed,
       len,
       z,
-      chars: Array.from({ length: len }, () => GLYPHS[Math.floor(rand() * GLYPHS.length)])
+      chars: Array.from({ length: len }, () => GLYPHS[Math.floor(rand() * GLYPHS.length)]),
+      gUntil: 0,
+      gNext: 0,
+      gDx: 0,
+      gA: 0,
+      gB: -1,
+      gT: 0
     }
   }
+  const span = (r: number[]) => r[0] + rand() * (r[1] - r[0])
+  /** Rain glitches forced on for testing (window.__fxRainGlitch). */
+  let rainGlitchUntil = 0
+  /**
+   * Glow sprites for the rain, drawn once: a soft round halo for the leading glyph, and a column
+   * that fades from bright at the bottom to nothing at the top, stretched behind each trail.
+   * Cheap stand-ins for shadowBlur, which is far too slow for hundreds of glyphs.
+   */
+  let rainHalo: HTMLCanvasElement | null = null
+  let rainStreak: HTMLCanvasElement | null = null
+  function rainGlow(): void {
+    rainHalo = document.createElement('canvas')
+    rainHalo.width = rainHalo.height = 64
+    const h = rainHalo.getContext('2d')!
+    const rg = h.createRadialGradient(32, 32, 0, 32, 32, 32)
+    rg.addColorStop(0, col(1))
+    rg.addColorStop(0.35, col(0.45))
+    rg.addColorStop(1, col(0))
+    h.fillStyle = rg
+    h.fillRect(0, 0, 64, 64)
+    rainStreak = document.createElement('canvas')
+    rainStreak.width = 32
+    rainStreak.height = 128
+    const g = rainStreak.getContext('2d')!
+    const across = g.createLinearGradient(0, 0, 32, 0)
+    across.addColorStop(0, col(0))
+    across.addColorStop(0.5, col(1))
+    across.addColorStop(1, col(0))
+    g.fillStyle = across
+    g.fillRect(0, 0, 32, 128)
+    // Fade toward the top (the tail).
+    g.globalCompositeOperation = 'destination-in'
+    const down = g.createLinearGradient(0, 0, 0, 128)
+    down.addColorStop(0, 'rgba(0,0,0,0)')
+    down.addColorStop(1, 'rgba(0,0,0,1)')
+    g.fillStyle = down
+    g.fillRect(0, 0, 32, 128)
+  }
+
   function drawRain(dt: number, plane: number): void {
     if (plane === 0) {
       while (rain.length < rainTarget()) rain.push(newDrop(rain.length > 0))
       if (rain.length > rainTarget()) rain.length = rainTarget()
     }
     ctx.textBaseline = 'middle'
+    if (!rainHalo) rainGlow()
+    const now = performance.now()
+    const gRate = intensity > 0 && !reduced ? RAIN_GLITCH.rate * (1 + 4 * excite + 3 * wave) * (now < rainGlitchUntil ? 40 : 1) : 0
     // One plane at a time, at its own parallax depth, so pieces can sit between planes.
     for (let z = plane; z <= plane; z++) {
       const pl = RAIN_PLANES[z]
@@ -856,19 +963,48 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
         const d = rain[i]
         if (d.z !== z) continue
         d.y += d.v * dt
+        // Glow behind the trail and around its head, added light so it blooms over the board.
+        const cx = d.x + pl.size * 0.3
+        const g = pl.glow ? 1 : 0.5
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.globalAlpha = 0.13 * g * pl.alpha
+        ctx.drawImage(rainStreak!, cx - pl.size, d.y - d.len * pl.step, pl.size * 2, d.len * pl.step + pl.step * 0.5)
+        ctx.globalAlpha = 0.3 * g * pl.alpha
+        ctx.drawImage(rainHalo!, cx - pl.size * 1.1, d.y - pl.size * 1.1, pl.size * 2.2, pl.size * 2.2)
+        ctx.globalAlpha = 1
+        ctx.globalCompositeOperation = 'source-over'
+        // Glitch: start one now and then; while it lasts, re-roll the split and the torn run.
+        if (now >= d.gUntil && gRate && rand() < dt * gRate) d.gUntil = now + span(RAIN_GLITCH.ms)
+        const glitching = now < d.gUntil
+        if (glitching && now >= d.gNext) {
+          d.gNext = now + span(RAIN_GLITCH.step)
+          const k = pl.size / 14
+          d.gDx = span(RAIN_GLITCH.split) * k * (rand() < 0.5 ? -1 : 1)
+          d.gA = Math.floor(rand() * d.len)
+          d.gB = rand() < 0.75 ? d.gA + 1 + Math.floor(rand() * 4) : -1
+          d.gT = span(RAIN_GLITCH.tear) * k * (rand() < 0.5 ? -1 : 1)
+          if (rand() < 0.5) d.chars[0] = GLYPHS[Math.floor(rand() * GLYPHS.length)]
+        }
         for (let k = 0; k < d.len; k++) {
           const y = d.y - k * pl.step
           if (y < -pl.step || y > H + pl.step) continue
-          if (rand() < dt * 1.2) d.chars[k] = GLYPHS[Math.floor(rand() * GLYPHS.length)]
+          // Glyphs keep mutating as they fall: the head churns fastest, the bright glyphs just
+          // behind it next, the rest of the trail still flickers a few times a second.
+          if (rand() < dt * (k === 0 ? 18 : k < 3 ? 10 : 4.5)) d.chars[k] = GLYPHS[Math.floor(rand() * GLYPHS.length)]
           const a = Math.pow(1 - k / d.len, 1.4) * pl.alpha
-          if (k === 0 && pl.glow) {
-            ctx.fillStyle = col(0.16 * pl.alpha)
-            ctx.beginPath()
-            ctx.arc(d.x + pl.size * 0.3, y, pl.size * 0.65, 0, Math.PI * 2)
-            ctx.fill()
-          }
+          const x = glitching && k >= d.gA && k <= d.gB ? d.x + d.gT : d.x
           ctx.fillStyle = k === 0 ? `rgba(235,255,240,${pl.alpha})` : k < 3 ? hot(0.9 * pl.alpha) : col(a)
-          ctx.fillText(d.chars[k], d.x, y)
+          ctx.fillText(d.chars[k], x, y)
+          if (glitching) {
+            // The split: red and cyan copies either side, added light so they fringe the glyph.
+            const ga = (k === 0 ? 1 : k < 3 ? 0.9 : a / pl.alpha) * 0.55 * pl.alpha * (z === 0 ? 0.6 : 1)
+            ctx.globalCompositeOperation = 'lighter'
+            ctx.fillStyle = `rgba(255,40,90,${ga.toFixed(3)})`
+            ctx.fillText(d.chars[k], x - d.gDx, y)
+            ctx.fillStyle = `rgba(40,220,255,${ga.toFixed(3)})`
+            ctx.fillText(d.chars[k], x + d.gDx, y)
+            ctx.globalCompositeOperation = 'source-over'
+          }
         }
         if (d.y - d.len * pl.step > H) rain[i] = newDrop(true)
       }
@@ -930,8 +1066,8 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   function updateParallax(now: number, dt: number): void {
     const t = now / 1000
     // Idle drift keeps it breathing when the pointer is still.
-    const gx = tx + Math.sin(t / 9) * 0.1
-    const gy = ty + Math.cos(t / 11) * 0.08
+    const gx = tx * PARALLAX_GAIN + Math.sin(t / 9) * 0.1
+    const gy = ty * PARALLAX_GAIN + Math.cos(t / 11) * 0.08
     // Tight follow (~35ms): locked to where you look, not floating after the mouse.
     const k = 1 - Math.exp(-dt / 0.035)
     px += (gx - px) * k
@@ -993,7 +1129,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
   }
 
   /** One random piece of chrome text glitches at a time, never everything together. */
-  const GLITCH_TARGETS = '.stack-wordmark, .header-title, .bb-title, .slot-badge-text, .park-title, .bb-hint, .header-cwd'
+  const GLITCH_TARGETS = '.stack-wordmark, .header-title, .bb-title, .slot-badge-text, .park-title, .bb-for, .header-cwd'
   function elementGlitch(now: number): void {
     if (reduced || intensity <= 0 || now < nextElGlitch) return
     if (nextElGlitch) {
@@ -1044,6 +1180,25 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
 
   /** Typing heat, 0..1: each key adds some, it cools over ~0.8s. Fast typing glitches harder. */
   let typeHeat = 0
+  let typingGlitch = opts.typingGlitch ?? true
+  /** The banner's words: one is picked when you start typing after a pause, then held. */
+  let hackTexts: string[] = []
+  let hackText = ''
+  /** Keys after this long a pause count as a fresh start (a new banner text). */
+  const HACK_REPICK_MS = 5000
+  function pickHackText(): void {
+    const pool = hackTexts.length ? hackTexts : ['HACKING...']
+    const others = pool.length > 1 ? pool.filter((t) => t !== hackText) : pool
+    hackText = others[Math.floor(rand() * others.length)]
+    showHackText()
+  }
+  function showHackText(): void {
+    const el = document.querySelector<HTMLElement>('.fx-hack-text')
+    if (!el || !hackText || el.textContent === hackText) return
+    el.textContent = hackText
+    // Long ones shrink to fit the box (see .fx-hack-text).
+    el.style.setProperty('--hack-len', String(Math.max(10, hackText.length)))
+  }
   let typeAt = 0
   /** Typing distortion strength 0..1; eases off over ~0.4s. */
   let wave = 0
@@ -1071,6 +1226,7 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     if (!hackEl?.isConnected) {
       hackEl = wave > 0.08 ? document.querySelector<HTMLElement>('.fx-hack') : null
       hackShown = '0.00'
+      if (hackEl) showHackText()
     }
     if (!hackEl) return
     let o = 0
@@ -1090,7 +1246,9 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
     // Snappy: dies off within ~half a second of the last key.
     wave *= Math.exp(-dt / 0.13)
     drawHack()
-    if (wave > 0.015 && staticLayer) {
+    // Switched off, the wave still runs (it drives the HACKING... banner) but tears nothing.
+    const on = typingGlitch && wave > 0.015
+    if (on && staticLayer) {
       if (now >= tearsAt) {
         // New jagged tear pattern ~every 40ms: a few big rips, many small slips.
         tearsAt = now + 30 + rand() * 30
@@ -1114,7 +1272,6 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     }
     // Chrome jitter, written straight to the elements (no page-wide style recalcs).
-    const on = wave > 0.015
     if (!on && !waveShown) return
     if (!waveEls.length) waveEls = [...document.querySelectorAll<HTMLElement>('.sidebar, .header, .bottom-bar')]
     const [r, g, b] = [ar, ag, ab]
@@ -1236,6 +1393,12 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
 
   const glitch = () => startGlitch(performance.now())
   ;(window as unknown as { __fxGlitch?: () => void }).__fxGlitch = glitch
+  ;(window as unknown as { __fxRainGlitch?: () => void }).__fxRainGlitch = () => (rainGlitchUntil = performance.now() + 1500)
+  // For poking at it: how many streaks are glitching right now.
+  ;(window as unknown as { __fxRainStats?: () => string }).__fxRainStats = () => {
+    const t = performance.now()
+    return `${rain.filter((d) => t < d.gUntil).length}/${rain.length}`
+  }
 
   build()
   run()
@@ -1264,10 +1427,19 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       intensity = Math.max(0, Math.min(1, n))
       run()
     },
+    setHackTexts(t: string[]) {
+      hackTexts = t.map((x) => x.trim()).filter(Boolean)
+      if (hackText && !hackTexts.includes(hackText)) hackText = ''
+    },
+    setTypingGlitch(v: boolean) {
+      typingGlitch = v
+    },
     glitch,
+    parallax: () => [px, py],
     burst() {
       if (intensity <= 0 || reduced) return
       const now = performance.now()
+      if (!hackText || now - typeAt > HACK_REPICK_MS) pickHackText()
       typeHeat = Math.min(1, typeHeat * Math.exp(-(now - typeAt) / 800) + 0.3)
       typeAt = now
       // A ripple of distortion that swells with each key and eases off (drawWave).

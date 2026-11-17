@@ -23,6 +23,13 @@ describe('nextSession', () => {
     expect(nextSession(S, rts({ a: 'busy', b: 'idle', c: 'attention', d: 'idle' }), 'a', 'priority', false)).toBe('b')
   })
 
+  it('with several permission prompts, the one waiting longest goes first', () => {
+    const rt = rts({ a: 'busy', b: 'attention', c: 'attention', d: 'idle' })
+    rt.b.attentionAt = 2000
+    rt.c.attentionAt = 1000
+    expect(nextSession(S, rt, 'a', 'priority', true)).toBe('c')
+  })
+
   it('sequential walks down from the current session and wraps', () => {
     const rt = rts({ a: 'idle', b: 'busy', c: 'idle', d: 'busy' })
     expect(nextSession(S, rt, 'a', 'sequential', false)).toBe('c')

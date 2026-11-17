@@ -5,6 +5,53 @@ const mono = '"JetBrains Mono", "SF Mono", Menlo, Monaco, monospace'
 
 export const BUILT_IN_THEMES: Theme[] = [
   {
+    // An animated circuit-board HUD around the terminals (see renderer/src/fx/matrix.ts).
+    id: 'matrix',
+    name: '90s Hacker',
+    builtIn: true,
+    crt: true,
+    fx: 'matrix',
+    ui: {
+      bg: '#020705',
+      sidebar: '#020604',
+      panel: '#06120b',
+      border: '#13321f',
+      text: '#c9ffd9',
+      muted: '#5a9a6c',
+      accent: '#5cff8f',
+      bubble: '#0f3a20',
+      bubbleText: '#d4ffe0',
+      pill: '#06140b',
+      pillText: '#8dffb0',
+      font: mono,
+      monoFont: mono,
+      fontSize: 13
+    },
+    terminal: {
+      background: '#030a06',
+      foreground: '#9effbb',
+      cursor: '#c9ffd9',
+      cursorAccent: '#030a06',
+      selectionBackground: '#1b5130',
+      black: '#0b1d12',
+      red: '#ff6b6b',
+      green: '#5cff8f',
+      yellow: '#e2ff70',
+      blue: '#5ad9c4',
+      magenta: '#c3f070',
+      cyan: '#70ffe0',
+      white: '#b8ffcb',
+      brightBlack: '#3f7552',
+      brightRed: '#ff9090',
+      brightGreen: '#98ffb8',
+      brightYellow: '#f0ffa0',
+      brightBlue: '#94ecdf',
+      brightMagenta: '#dcffa0',
+      brightCyan: '#a4fff0',
+      brightWhite: '#ecfff1'
+    }
+  },
+  {
     id: 'phosphor',
     name: 'Phosphor',
     builtIn: true,
@@ -221,54 +268,8 @@ export const BUILT_IN_THEMES: Theme[] = [
       brightCyan: '#6ff6fc',
       brightWhite: '#ffffff'
     }
-  },
-  {
-    // An animated circuit-board HUD around the terminals (see renderer/src/fx/matrix.ts).
-    id: 'matrix',
-    name: '90s Hacker',
-    builtIn: true,
-    crt: true,
-    fx: 'matrix',
-    ui: {
-      bg: '#020705',
-      sidebar: '#020604',
-      panel: '#06120b',
-      border: '#13321f',
-      text: '#c9ffd9',
-      muted: '#5a9a6c',
-      accent: '#5cff8f',
-      bubble: '#0f3a20',
-      bubbleText: '#d4ffe0',
-      pill: '#06140b',
-      pillText: '#8dffb0',
-      font: mono,
-      monoFont: mono,
-      fontSize: 13
-    },
-    terminal: {
-      background: '#030a06',
-      foreground: '#9effbb',
-      cursor: '#c9ffd9',
-      cursorAccent: '#030a06',
-      selectionBackground: '#1b5130',
-      black: '#0b1d12',
-      red: '#ff6b6b',
-      green: '#5cff8f',
-      yellow: '#e2ff70',
-      blue: '#5ad9c4',
-      magenta: '#c3f070',
-      cyan: '#70ffe0',
-      white: '#b8ffcb',
-      brightBlack: '#3f7552',
-      brightRed: '#ff9090',
-      brightGreen: '#98ffb8',
-      brightYellow: '#f0ffa0',
-      brightBlue: '#94ecdf',
-      brightMagenta: '#dcffa0',
-      brightCyan: '#a4fff0',
-      brightWhite: '#ecfff1'
-    }
   }
+
 ]
 
 /** Quick replies that shipped as defaults before; a saved list still equal to this is upgraded. */
@@ -279,6 +280,7 @@ export const DEFAULT_SETTINGS: Settings = {
   attentionFirst: true,
   sendOffMs: 1000,
   snapToHigher: false,
+  grabApprovals: true,
   standalone: false,
   bubbleClick: 'load',
   pills: ['Continue', 'Commit & push'],
@@ -286,7 +288,9 @@ export const DEFAULT_SETTINGS: Settings = {
   scrollback: 1500,
   miniHeight: 120,
   fxIntensity: 0.6,
-  hackBanner: false
+  hackBanner: false,
+  hackTexts: [],
+  typingGlitch: true
 }
 
 export function findTheme(id: string, custom: Theme[]): Theme {

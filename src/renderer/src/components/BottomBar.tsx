@@ -1,8 +1,13 @@
 import { useEffect, useRef } from 'react'
 import type { QueueItem, Settings } from '../../../shared/types'
+import { CloseArm } from './controls'
 
-/** hold: typed during a cancelled auto-switch · queue: "+ Add" · edit: long text loaded to finish. */
-export type ComposerMode = 'hold' | 'queue' | 'edit' | null
+/**
+ * What the Queued input is doing. queue: a new follow-up · hold: typed during a cancelled
+ * auto-switch (also queues) · edit: long text loaded to finish, Enter sends it to Claude ·
+ * revise: rewriting a queued message in place. null: idle (one line, list showing).
+ */
+export type ComposerMode = 'hold' | 'queue' | 'edit' | 'revise' | null
 
 interface Props {
   sessionId: string | null
@@ -21,7 +26,10 @@ interface Props {
   onPill: (text: string) => void
   onBubble: (item: QueueItem, alt: boolean) => void
   onSendQueued: (item: QueueItem) => void
-  onLoadQueued: (item: QueueItem) => void
+  /** Load a queued message into the input to rewrite it in place. */
+  onRevise: (item: QueueItem) => void
+  /** The queued message being revised, if any. */
+  reviseId: string | null
   onRemoveBubble: (item: QueueItem) => void
 }
 
@@ -31,29 +39,16 @@ const BoltIcon = () => (
   </svg>
 )
 
+const PlusIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+)
+
 const QueueIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M4 6h11M4 12h11M4 18h7" />
     <path d="M18 15v6M15 18h6" />
-  </svg>
-)
-
-const SendIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M20 5v7a3 3 0 0 1-3 3H5" />
-    <path d="m9 11-4 4 4 4" />
-  </svg>
-)
-
-const EditIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
-  </svg>
-)
-
-const XIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-    <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 )
 
@@ -67,80 +62,102 @@ function QuickReplies({ settings, disabled, onPill, onEdit }: { settings: Settin
         <span className="bb-icon">
           <BoltIcon />
         </span>
-        <span className="bb-title">Quick replies</span>
-        <span className="bb-hint">one tap sends</span>
-        <button className="bb-add" onClick={onEdit} title="Add or edit quick replies in Settings">
-          + Add
-        </button>
+        <span className="bb-title">
+          Quick replies <span className="bb-for">one tap sends</span>
+        </span>
       </header>
-      {settings.pills.length > 0 ? (
-        <div className="pills">
-          {settings.pills.map((text) => {
-            // A trailing space marks a preset that loads into the input for finishing instead of sending.
-            const loads = /[\s:]$/.test(text)
-            return (
-              <button
-                key={text}
-                className="pill"
-                disabled={disabled}
-                onClick={() => onPill(text)}
-                title={loads ? `Load “${text.trim()}” into the input to finish` : `Send “${text}” now`}
-              >
-                {label(text)}
-              </button>
-            )
-          })}
-        </div>
-      ) : (
-        <p className="bb-empty">No quick replies yet. Use + Add to make one-tap prompts you send often.</p>
-      )}
+      <div className="pills">
+        {settings.pills.map((text) => {
+          // A trailing space marks a preset that loads into the input for finishing instead of sending.
+          const loads = /[\s:]$/.test(text)
+          return (
+            <button
+              key={text}
+              className="pill"
+              disabled={disabled}
+              onClick={() => onPill(text)}
+              title={loads ? `Load “${text.trim()}” into the input to finish` : `Send “${text}” now`}
+            >
+              {label(text)}
+            </button>
+          )
+        })}
+        {/* Last in the row, same shape as a reply: opens Settings → Quick replies. */}
+        <button className="pill pill-add" onClick={onEdit} title="Add or edit quick replies in Settings">
+          <PlusIcon />
+          {settings.pills.length ? 'Add new' : 'Add a quick reply'}
+        </button>
+      </div>
     </section>
   )
 }
 
-function Composer(p: Props) {
+/**
+ * The Queued card's input: always there at the top, styled like Claude Code's own prompt so it
+ * reads as "type here". Enter queues (it stays open for the next one); while you type it grows
+ * to fill the card. Esc clears it and goes back to the terminal.
+ */
+function QueueInput(p: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const open = !!p.composerMode
+  // Opened from elsewhere (Space during a send-off, Revise, a long quick reply): take focus.
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [p.composerMode])
-  useEffect(() => {
-    const el = inputRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(96, el.scrollHeight)}px`
-  }, [p.composerText])
+    if (p.composerMode) inputRef.current?.focus()
+  }, [p.composerMode, p.reviseId])
 
-  const placeholder =
-    p.composerMode === 'edit' ? 'Edit, then Enter to send · Esc to cancel' : 'Type a follow-up · Enter adds it · Esc closes'
+  const reviseN = p.reviseId ? p.queue.findIndex((q) => q.id === p.reviseId) + 1 : 0
+  const placeholder = !p.sessionId
+    ? 'No session'
+    : p.composerMode === 'edit'
+      ? 'Finish it, then Enter sends it to Claude · Esc cancels'
+      : p.composerMode === 'revise'
+        ? 'Enter saves it back in its place · Esc leaves it as it was'
+        : `Queue a follow-up for ${p.sessionName}`
   return (
-    <div className={`bb-composer is-${p.composerMode}`}>
+    <div className={`bb-qinput is-${p.composerMode ?? 'idle'}`}>
+      {(p.composerMode === 'revise' || p.composerMode === 'hold' || p.composerMode === 'edit') && (
+        <div className="bb-qinput-tag">
+          {p.composerMode === 'revise' ? `Revising #${reviseN}` : p.composerMode === 'hold' ? 'Auto-switch paused · ⌃⇧J resumes' : 'Finish, then send'}
+        </div>
+      )}
+      <span className="bb-qinput-prompt" aria-hidden>
+        &gt;
+      </span>
       <textarea
         ref={inputRef}
         rows={1}
-        value={p.composerText}
+        value={open ? p.composerText : ''}
         placeholder={placeholder}
+        disabled={!p.sessionId}
+        spellCheck={false}
+        aria-label="Queue a follow-up"
+        onFocus={() => {
+          if (!p.composerMode) p.onOpenQueue()
+        }}
         onChange={(e) => p.setComposerText(e.target.value)}
         onKeyDown={(e) => {
+          // Keep keys here: the app's shortcuts and the terminal shouldn't see them.
+          e.stopPropagation()
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault()
-            if (p.composerText.trim()) p.onComposerSubmit(p.composerText)
+            if (p.composerText.trim() || p.composerMode === 'revise') p.onComposerSubmit(p.composerText)
           } else if (e.key === 'Escape') {
             e.preventDefault()
             p.onComposerClose()
           }
         }}
       />
-      {p.composerMode === 'hold' && <span className="bb-chip">Auto-switch paused · ⌃⇧J resumes</span>}
     </div>
   )
 }
 
 function QueuePanel(p: Props) {
   const n = p.queue.length
-  // No add button: clicking the open space in the card starts a new follow-up.
-  const canAdd = !!p.sessionId && !p.composerMode
   return (
-    <section className={`bb-card bb-queue ${p.sessionId ? '' : 'is-disabled'}`} style={{ ['--c' as string]: p.sessionColor }}>
+    <section
+      className={`bb-card bb-queue ${p.sessionId ? '' : 'is-disabled'} ${p.composerMode ? 'is-typing' : ''}`}
+      style={{ ['--c' as string]: p.sessionColor }}
+    >
       <header className="bb-head">
         <span className="bb-icon">
           <QueueIcon />
@@ -150,40 +167,25 @@ function QueuePanel(p: Props) {
         </span>
         {n > 0 && <span className="bb-count">{n}</span>}
       </header>
-      <div
-        className={`bb-list ${canAdd ? 'is-addable' : ''}`}
-        onClick={(e) => {
-          if (canAdd && !(e.target as HTMLElement).closest('.bb-item, .bb-composer')) p.onOpenQueue()
-        }}
-      >
-        {n === 0 && !p.composerMode && <p className="bb-empty">Nothing queued. Click here to line up a follow-up, then send it when the session is ready.</p>}
+      <QueueInput {...p} />
+      <div className="bb-list">
+        {n === 0 && <p className="bb-empty">Nothing queued yet. Type above and press Enter; send it when the session is ready.</p>}
         {p.queue.map((q, i) => (
           <div key={q.id} className="bb-item" title={q.text}>
             <span className="bb-item-n">{i + 1}</span>
             <span className="bb-item-text">{q.text}</span>
-            {/* On hover the row splits into thirds: send · edit · delete. */}
+            {/* On hover: most of the row is SEND NOW, a narrower part on the right is REVISE. */}
             <span className="bb-item-zones">
-              <button onClick={() => p.onSendQueued(q)} aria-label="Send now">
-                <SendIcon />
-                Send
+              <button className="bb-item-send" onClick={() => p.onSendQueued(q)} aria-label={`Send now: ${q.text}`}>
+                <span className="bb-item-zone-label">SEND NOW</span>
               </button>
-              <button onClick={() => p.onLoadQueued(q)} aria-label="Edit">
-                <EditIcon />
-                Edit
-              </button>
-              <button className="is-remove" onClick={() => p.onRemoveBubble(q)} aria-label="Delete">
-                <XIcon />
-                Delete
+              <button className="bb-item-revise" onClick={() => p.onRevise(q)} aria-label={`Revise: ${q.text}`}>
+                <span className="bb-item-zone-label">REVISE</span>
               </button>
             </span>
+            <CloseArm label="Delete from the queue" onArmedClick={() => p.onRemoveBubble(q)} />
           </div>
         ))}
-        {n > 0 && canAdd && (
-          <button className="bb-new" onClick={p.onOpenQueue}>
-            + Queue another
-          </button>
-        )}
-        {p.composerMode && <Composer {...p} />}
       </div>
     </section>
   )

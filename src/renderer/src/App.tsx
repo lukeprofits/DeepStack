@@ -57,6 +57,14 @@ function tildePath(p: string): string {
   return home && (p === home || p.startsWith(home + '/')) ? '~' + p.slice(home.length) : p
 }
 
+/** The switch pill's words: why it's moving you. */
+function pillText(p: Preview, name: string): string {
+  if (p.reason === 'approval') return `Needs your approval: ${name}`
+  if (p.reason === 'next') return `Next approval: ${name}${p.left ? ` · ${p.left} more` : ''}`
+  if (p.reason === 'return') return `All approved. Back to ${name}`
+  return `Switching to ${name}`
+}
+
 export function App() {
   const [collapsed, setCollapsed] = useState(loadCollapsed)
   const [state, setState] = useState<AppState | null>(null)
@@ -74,6 +82,8 @@ export function App() {
   const stateRef = useRef(state)
   stateRef.current = state
   const composerRef = useRef({ mode: composerMode, text: composerText, sessionId: null as string | null })
+  /** The queued message being rewritten in the Queued input (mode 'revise'). */
+  const [reviseId, setReviseId] = useState<string | null>(null)
   composerRef.current = { ...composerRef.current, mode: composerMode, text: composerText }
 
   useEffect(() => {
@@ -112,10 +122,10 @@ export function App() {
   // ---- send-off: the server picked where to go next and will switch after `ms` unless the
   // human presses Space. The animation itself is the window to cancel in.
   useEffect(() => {
-    return stack.onSendOff(({ id, target, ms }) => {
+    return stack.onSendOff(({ id, target, ms, reason, left }) => {
       const st = stateRef.current
       if (!st || st.activeId !== id || st.hold || !target) return
-      setPreview({ from: id, to: target, ms })
+      setPreview({ from: id, to: target, ms, reason, left })
     })
   }, [])
 
@@ -135,6 +145,11 @@ export function App() {
     const c = composerRef.current
     if (c.mode === 'hold' || c.mode === 'queue') {
       if (c.text.trim() && c.sessionId && c.sessionId !== activeId) void stack.deliver({ t: 'deliver', id: c.sessionId, text: c.text, mode: 'enqueue' })
+      setComposerMode(null)
+      setComposerText('')
+    } else if (c.mode === 'revise') {
+      // A revise belongs to the session it was opened on: switching away drops it unchanged.
+      setReviseId(null)
       setComposerMode(null)
       setComposerText('')
     }
@@ -268,10 +283,26 @@ export function App() {
     setComposerMode('queue')
   }
 
+  const onRevise = (q: QueueItem) => {
+    composerRef.current.sessionId = activeId
+    setReviseId(q.id)
+    setComposerText(q.text)
+    setComposerMode('revise')
+  }
+
   const onComposerSubmit = (text: string) => {
     if (composerMode === 'hold' || composerMode === 'queue') {
+      // Queued; the input stays open for the next one.
       void deliver(text, 'enqueue')
       setComposerText('')
+    } else if (composerMode === 'revise') {
+      // Same place in the queue, new words.
+      const id = composerRef.current.sessionId
+      if (id && reviseId) void stack.intent({ t: 'updateQueued', id, itemId: reviseId, text })
+      setReviseId(null)
+      setComposerText('')
+      setComposerMode(null)
+      focusMainTerminal()
     } else {
       void deliver(text, 'send')
       setComposerText('')
@@ -281,6 +312,7 @@ export function App() {
 
   const onComposerClose = () => {
     if (composerMode === 'hold') void stack.intent({ t: 'setHold', hold: false })
+    setReviseId(null)
     setComposerMode(null)
     setComposerText('')
     focusMainTerminal()
@@ -305,10 +337,18 @@ export function App() {
   const phase = activeRt?.phase
   const closing = state.sessions.find((s) => s.id === confirmClose)
   const previewTarget = preview ? state.sessions.find((s) => s.id === preview.to) : undefined
+  // Permission prompts in other (unparked) sessions, oldest first: shown when nothing grabbed
+  // you to them yet (you're typing, holding, in another approval, or grabbing is off).
+  const waiting = preview
+    ? []
+    : state.sessions
+        .filter((s) => !s.inactive && s.id !== activeId && state.runtime[s.id]?.phase === 'attention')
+        .sort((a, b) => (state.runtime[a.id]?.attentionAt ?? 0) - (state.runtime[b.id]?.attentionAt ?? 0))
+        .map((s) => s.id)
 
   return (
     <>
-    <FxLayer theme={theme} intensity={state.settings.fxIntensity ?? 0.6} hackBanner={state.settings.hackBanner ?? false} />
+    <FxLayer theme={theme} intensity={state.settings.fxIntensity ?? 0.6} hackBanner={state.settings.hackBanner ?? false} hackTexts={state.settings.hackTexts ?? []} typingGlitch={state.settings.typingGlitch ?? true} />
     <div className={`app ${collapsed ? 'is-collapsed' : ''}`}>
       <Sidebar
         state={state}
@@ -330,6 +370,12 @@ export function App() {
               working
             </span>
           )}
+          {phase === 'idle' && activeRt?.background && (
+            <span className="header-status is-busy" title="Claude is waiting on a background task it started, and picks up by itself when it finishes. Auto-switch leaves it alone.">
+              <i />
+              background task
+            </span>
+          )}
           {phase === 'attention' && (
             <span className="header-status is-attention">
               <i />
@@ -344,6 +390,11 @@ export function App() {
           )}
           <span className="header-right">
             {!state.hold && allBusy && phase === 'busy' && <span className="header-meta">all busy</span>}
+            {waiting.length > 0 && (
+              <button className="header-action is-approvals" onClick={() => void stack.intent({ t: 'activate', id: waiting[0] })} title="Go to the one that's been waiting longest">
+                {waiting.length} approval{waiting.length === 1 ? '' : 's'} waiting
+              </button>
+            )}
             {conn === 'closed' && <span className="header-meta">reconnecting…</span>}
             {state.hold && (
               <button className="header-action" onClick={() => runCommand('advance')}>
@@ -382,7 +433,7 @@ export function App() {
           {preview && previewTarget && (
             <div className="switch-pill" key={preview.to} style={{ ['--c' as string]: sessionColor(theme, previewTarget.color), animationDuration: `${preview.ms}ms` }}>
               <span className="switch-pill-dot" />
-              Switching to {displayName(previewTarget)}
+              {pillText(preview, displayName(previewTarget))}
               <kbd>Space</kbd>
               to stay
             </div>
@@ -423,7 +474,8 @@ export function App() {
             setShowSettings(true)
           }}
           onSendQueued={(q) => void deliver(q.text, 'send', q.id)}
-          onLoadQueued={(q) => void deliver(q.text, 'load', q.id)}
+          onRevise={onRevise}
+          reviseId={reviseId}
           onRemoveBubble={(q) => active && void stack.intent({ t: 'removeQueued', id: active.id, itemId: q.id })}
         />
       </main>

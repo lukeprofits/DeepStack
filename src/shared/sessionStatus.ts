@@ -113,8 +113,11 @@ export function reduceStatus(rt: SessionRuntime, ev: StatusEvent, ctx: StatusCon
       if (!rt.claudeAlive && prev !== 'starting') break
       const p = parseTitle(ev.title)
       if (p.name) autoName = p.name
-      if (p.state === 'busy') set('busy')
-      else if (p.state === 'idle') {
+      if (p.state === 'busy') {
+        // A spinner redraw after a permission prompt mustn't hide it: only leave attention once
+        // the human responded.
+        if (prev !== 'attention' || rt.lastInputAt > (rt.attentionAt ?? 0)) set('busy')
+      } else if (p.state === 'idle') {
         // A permission prompt keeps the idle glyph; only leave attention once the human responded.
         if (prev === 'attention') {
           if (rt.lastInputAt > (rt.attentionAt ?? 0)) set('idle')

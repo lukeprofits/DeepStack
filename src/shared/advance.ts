@@ -4,6 +4,8 @@ const READY: Phase[] = ['idle', 'attention', 'dormant', 'shell']
 
 export function isEligible(s: SessionConfig, rt: SessionRuntime | undefined): boolean {
   if (s.inactive) return false
+  // Quiet while its own background task runs: not ready for you (see SessionRuntime.background).
+  if (rt?.phase === 'idle' && rt.background) return false
   return READY.includes(rt?.phase ?? 'dormant')
 }
 
@@ -25,7 +27,10 @@ export function nextSession(
 
   if (mode === 'priority') {
     if (attentionFirst) {
-      const waiting = candidates.find((s) => runtime[s.id]?.phase === 'attention')
+      // The one that has been waiting longest goes first.
+      const waiting = candidates
+        .filter((s) => runtime[s.id]?.phase === 'attention')
+        .sort((a, b) => (runtime[a.id]?.attentionAt ?? 0) - (runtime[b.id]?.attentionAt ?? 0))[0]
       if (waiting) return waiting.id
     }
     return candidates[0].id

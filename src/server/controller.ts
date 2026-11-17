@@ -8,8 +8,9 @@ import type { HostControl, HostEvent, ProcInfo, Snapshot } from '../shared/proto
 import { initialRuntime, reduceStatus, type StatusEvent } from '../shared/sessionStatus'
 import { buildSpawnSpec, claudeResumeFlags, resumeInput } from '../shared/spawnSpec'
 import { DEFAULT_SETTINGS, LEGACY_DEFAULT_PILLS } from '../shared/themes'
-import type { AppState, DeliverResult, Intent, PersistedState, Program, SessionConfig, SessionRuntime, Settings } from '../shared/types'
+import type { AppState, DeliverResult, Intent, PersistedState, Program, SendOffReason, SessionConfig, SessionRuntime, Settings } from '../shared/types'
 import { isClaude } from '../ptyhost/procPoll'
+import { findTranscript, pendingBackgroundTasks } from './backgroundTasks'
 import { globalHooksInstalled, hooksDisabledByUser, installGlobalHooks, removeGlobalHooks, type HookEvent } from './hookServer'
 import { debounced, readJsonSafe, writeJsonAtomic } from './persist'
 
@@ -26,8 +27,11 @@ export interface ControllerDeps {
   paths: Paths
   host: (msg: HostControl) => void
   broadcast: (state: AppState) => void
-  /** Focused session was sent off; `target` is where the advance will go (for the animation). */
-  sendOff: (id: string, target: string, ms: number) => void
+  /**
+   * A switch from `id` to `target` is coming in `ms` (for the animation; Space cancels).
+   * `reason` says why (a send-off or a step of an approval run); `left` = approvals after it.
+   */
+  sendOff: (id: string, target: string, ms: number, reason: SendOffReason, left: number) => void
   snap: (id: string, from: string | null) => void
   quit: () => void
   shell: string
@@ -46,7 +50,11 @@ const INPUT_READY_MS = 400
 const RENAME_GAP_MS = 350
 /** After typing /rename, ignore the busy blip it causes for auto-switch purposes. */
 const RENAME_QUIET_MS = 3000
+/** An approval only pulls you away once you've stopped typing (or switching) for this long. */
+const APPROVAL_QUIET_MS = 2500
 const SNAPSHOT_EVERY_MS = 60_000
+/** How often a session waiting on its background task is re-checked (in case Claude doesn't resume). */
+const BACKGROUND_RECHECK_MS = 15_000
 /** Give up waiting for a resumed Claude to report in. */
 const STARTING_TIMEOUT_MS = 30_000
 
@@ -83,6 +91,21 @@ export class Controller {
   private snapshotTimer: NodeJS.Timeout | null = null
   private shuttingDown = false
   private sendOffTimer: NodeJS.Timeout | null = null
+  /**
+   * Approval run: permission prompts elsewhere pulled you away from `returnTo`; you're walked
+   * through them oldest first, then taken back there. Never pulled out of an unanswered one.
+   */
+  private run: { returnTo: string | null } | null = null
+  private approvalTimer: NodeJS.Timeout | null = null
+  /** The pending preview is a step of an approval run (so Space dismisses those approvals). */
+  private previewIsApproval = false
+  /** Approvals you said "stay" to (Space): not grabbed again until they're answered. */
+  private dismissed = new Set<string>()
+  /** Last time you switched yourself; counts as activity for the approval quiet period. */
+  private manualAt = 0
+  /** Each Claude session's transcript file (from its hooks), for spotting background tasks. */
+  private transcripts = new Map<string, string>()
+  private backgroundTimer: NodeJS.Timeout | null = null
 
   constructor(private readonly deps: ControllerDeps) {
     const { value, warning } = readJsonSafe(deps.paths.state, isPersisted)
@@ -238,6 +261,12 @@ export class Controller {
     if (!s) return
     const before = this.rt(id)
     const res = reduceStatus(before, ev, { focused: id === this.state.activeId, now: Date.now() })
+    // Going quiet: is it really done, or waiting on a background task of its own?
+    if (res.rt.phase !== 'idle') res.rt.background = false
+    else if (before.phase !== 'idle') {
+      res.rt.background = this.backgroundPending(id, res.claudeSid)
+      if (res.rt.background) this.watchBackground()
+    }
     this.state.runtime[id] = res.rt
     let dirty = JSON.stringify(before) !== JSON.stringify(res.rt)
     let persist = false
@@ -256,9 +285,116 @@ export class Controller {
     if (READY_FOR_TEXT.includes(res.rt.phase)) this.flushPending(id, renamed ? RENAME_GAP_MS : 0)
     // Claude flashes busy while it runs our /rename; that's not a prompt being sent.
     const renaming = Date.now() - (this.renamedAt.get(id) ?? 0) < RENAME_QUIET_MS
-    if (res.sentOff && !renaming && !this.state.hold && this.state.settings.advanceMode !== 'off') this.startSendOff(id)
+    // During an approval run, answering decides where you go next (the run), not the send-off.
+    if (res.sentOff && !renaming && !this.state.hold && !this.run && this.state.settings.advanceMode !== 'off') this.startSendOff(id)
     this.maybeSnap(id, before.phase, res.rt.phase)
+    const raised = res.rt.phase === 'attention' && before.phase !== 'attention'
+    const cleared = before.phase === 'attention' && res.rt.phase !== 'attention'
+    if (cleared) this.dismissed.delete(id)
+    if (raised || (cleared && id === this.state.activeId)) this.checkApprovals()
     if (dirty && ev.k !== 'input') this.changed(persist)
+  }
+
+  /** Whether this Claude session has a background task running that hasn't reported back. */
+  private backgroundPending(id: string, newSid?: string): boolean {
+    const s = this.session(id)
+    const sid = newSid ?? (s?.program?.kind === 'claude' ? s.program.sid : undefined)
+    let path = this.transcripts.get(id)
+    if (!path && sid && s) {
+      path = findTranscript(join(homedir(), '.claude', 'projects'), sid, s.cwd) ?? undefined
+      if (path) this.transcripts.set(id, path)
+    }
+    return !!path && pendingBackgroundTasks(path).length > 0
+  }
+
+  /** Re-check sessions waiting on a background task until none are (Claude usually resumes first). */
+  private watchBackground(): void {
+    if (this.backgroundTimer) return
+    this.backgroundTimer = setInterval(() => {
+      let any = false
+      let changed = false
+      for (const s of this.state.sessions) {
+        const rt = this.state.runtime[s.id]
+        if (!rt?.background) continue
+        if (rt.phase === 'idle' && this.backgroundPending(s.id)) any = true
+        else {
+          this.state.runtime[s.id] = { ...rt, background: false }
+          changed = true
+        }
+      }
+      if (changed) this.changed(false)
+      if (!any && this.backgroundTimer) {
+        clearInterval(this.backgroundTimer)
+        this.backgroundTimer = null
+      }
+    }, BACKGROUND_RECHECK_MS)
+  }
+
+  /** Sessions waiting on a permission prompt (other than the focused one), oldest first. */
+  private approvals(): string[] {
+    const st = this.state
+    return st.sessions
+      .filter((s) => !s.inactive && s.id !== st.activeId && st.runtime[s.id]?.phase === 'attention' && !this.dismissed.has(s.id))
+      .sort((a, b) => (st.runtime[a.id]?.attentionAt ?? 0) - (st.runtime[b.id]?.attentionAt ?? 0))
+      .map((s) => s.id)
+  }
+
+  /**
+   * Approval runs. Called whenever that picture may have changed (a prompt appeared, you
+   * answered one, hold was lifted, the quiet period ran out). Idempotent.
+   */
+  private checkApprovals(): void {
+    const st = this.state
+    if (this.approvalTimer) clearTimeout(this.approvalTimer)
+    this.approvalTimer = null
+    if (!st.settings.grabApprovals || st.settings.advanceMode === 'off') {
+      this.run = null
+      return
+    }
+    const active = st.activeId
+    // A switch is already on its way, you asked to stay, or you're looking at an approval.
+    if (this.sendOffTimer || st.hold || !active) return
+    if (st.runtime[active]?.phase === 'attention') return
+    const queue = this.approvals()
+    if (!queue.length) {
+      // All answered: back to where the run found you.
+      if (!this.run) return
+      const back = this.run.returnTo
+      this.run = null
+      const s = back ? this.session(back) : undefined
+      if (s && !s.inactive && back !== active) this.preview(active, s.id, 'return', 0)
+      return
+    }
+    if (!this.run) {
+      // Don't pull you away mid-sentence (or right after you switched yourself).
+      const quiet = Date.now() - Math.max(st.runtime[active]?.lastInputAt ?? 0, this.manualAt)
+      if (quiet < APPROVAL_QUIET_MS) {
+        this.approvalTimer = setTimeout(() => this.checkApprovals(), APPROVAL_QUIET_MS - quiet + 50)
+        return
+      }
+      this.run = { returnTo: active }
+      this.preview(active, queue[0], 'approval', queue.length - 1)
+    } else this.preview(active, queue[0], 'next', queue.length - 1)
+  }
+
+  /**
+   * Announce a switch (the UI animates it; Space cancels) and make it after the send-off window,
+   * unless you moved or asked to stay first.
+   */
+  private preview(from: string, target: string, reason: SendOffReason, left: number): void {
+    this.cancelSendOff()
+    const ms = this.state.settings.sendOffMs
+    this.previewIsApproval = reason === 'approval' || reason === 'next'
+    this.deps.sendOff(from, target, ms, reason, left)
+    this.sendOffTimer = setTimeout(() => {
+      this.sendOffTimer = null
+      this.previewIsApproval = false
+      if (this.state.activeId !== from || this.state.hold) return
+      const t = this.session(target)
+      const stillWaiting = reason === 'return' || this.state.runtime[target]?.phase === 'attention'
+      if (t && !t.inactive && stillWaiting) this.activate(target, true)
+      else this.checkApprovals()
+    }, ms)
   }
 
   /**
@@ -273,13 +409,14 @@ export class Controller {
     const target = nextSession(st.sessions, st.runtime, id, mode, st.settings.attentionFirst)
     // Nothing else is ready: stay put (the header says "all busy").
     if (!target) return
-    this.deps.sendOff(id, target, st.settings.sendOffMs)
+    this.previewIsApproval = false
+    this.deps.sendOff(id, target, st.settings.sendOffMs, 'sendOff', 0)
     this.sendOffTimer = setTimeout(() => {
       this.sendOffTimer = null
       if (this.state.activeId !== id || this.state.hold) return
       // Land where the UI was animating to, unless that session stopped being ready.
       const t = this.session(target)
-      if (t && isEligible(t, this.state.runtime[target])) this.activate(target)
+      if (t && isEligible(t, this.state.runtime[target])) this.activate(target, true)
       else this.intent({ t: 'advance' })
     }, this.state.settings.sendOffMs)
   }
@@ -287,6 +424,7 @@ export class Controller {
   private cancelSendOff(): void {
     if (this.sendOffTimer) clearTimeout(this.sendOffTimer)
     this.sendOffTimer = null
+    this.previewIsApproval = false
   }
 
   /**
@@ -297,14 +435,18 @@ export class Controller {
     const st = this.state
     if (!st.settings.snapToHigher || st.settings.advanceMode !== 'priority') return
     if (!st.activeId || id === st.activeId) return
+    // Never pulled out of a permission prompt you haven't answered (approvals queue instead).
+    if (st.runtime[st.activeId]?.phase === 'attention') return
     const becameReady = (prev === 'busy' && (phase === 'idle' || phase === 'attention')) || (phase === 'attention' && prev !== 'attention')
     if (!becameReady) return
+    // Gone quiet only to wait on its own background task: nothing for you there yet.
+    if (phase === 'idle' && st.runtime[id]?.background) return
     const list = st.sessions.filter((s) => !s.inactive)
     const target = list.findIndex((s) => s.id === id)
     const current = list.findIndex((s) => s.id === st.activeId)
     if (target === -1 || (current !== -1 && target > current)) return
     const from = st.activeId
-    this.activate(id)
+    this.activate(id, true)
     this.deps.snap(id, from)
   }
 
@@ -384,6 +526,7 @@ export class Controller {
     const sid = e.payload.session_id
     const known = s.program?.kind === 'claude' ? s.program.sid : undefined
     if (e.name !== 'SessionStart' && typeof sid === 'string' && known && sid !== known) return
+    if (typeof e.payload.transcript_path === 'string') this.transcripts.set(e.sid, e.payload.transcript_path)
     this.status(e.sid, { k: 'hook', name: e.name, payload: e.payload })
   }
 
@@ -464,6 +607,13 @@ export class Controller {
   private removeQueued(id: string, itemId?: string): void {
     const s = this.session(id)
     if (s && itemId) s.queue = s.queue.filter((q) => q.id !== itemId)
+  }
+
+  private updateQueued(id: string, itemId: string, text: string): void {
+    const s = this.session(id)
+    if (!s) return
+    if (!text.trim()) return this.removeQueued(id, itemId)
+    s.queue = s.queue.map((q) => (q.id === itemId ? { ...q, text } : q))
   }
 
   /** Single path for pills, queue bubbles, the hold composer and (later) voice transcription. */
@@ -547,14 +697,21 @@ export class Controller {
 
   // ---------------------------------------------------------------- intents
 
-  private activate(id: string): void {
+  /** `auto`: DeepStack moved you (send-off, snap, approval run), not a click or shortcut. */
+  private activate(id: string, auto = false): void {
     if (!this.session(id)) return
     if (id !== this.state.activeId) this.cancelSendOff()
+    // You took over: the approval run ends, and no grab until you've had a moment.
+    if (!auto) {
+      this.run = null
+      this.manualAt = Date.now()
+    }
     this.state.activeId = id
     this.state.hold = false
     this.status(id, { k: 'focus' })
     this.ensureSpawned(id)
     this.changed()
+    this.checkApprovals()
   }
 
   intent(i: Intent): unknown {
@@ -650,6 +807,10 @@ export class Controller {
         this.removeQueued(i.id, i.itemId)
         this.changed()
         return
+      case 'updateQueued':
+        this.updateQueued(i.id, i.itemId, i.text)
+        this.changed()
+        return
       case 'deliver':
         return this.deliver(i.id, i.text, i.mode, i.itemId)
       case 'resize': {
@@ -673,8 +834,16 @@ export class Controller {
       }
       case 'setHold':
         st.hold = i.hold
-        if (i.hold) this.cancelSendOff()
+        if (i.hold) {
+          // "Stay" on an approval grab: leave those approvals be until they're answered.
+          if (this.sendOffTimer && this.previewIsApproval) {
+            for (const a of this.approvals()) this.dismissed.add(a)
+            this.run = null
+          }
+          this.cancelSendOff()
+        }
         this.changed(false)
+        if (!i.hold) this.checkApprovals()
         return
       case 'setSettings':
         st.settings = { ...st.settings, ...i.settings }
@@ -722,6 +891,7 @@ export class Controller {
   async shutdown(): Promise<void> {
     this.shuttingDown = true
     if (this.snapshotTimer) clearInterval(this.snapshotTimer)
+    if (this.backgroundTimer) clearInterval(this.backgroundTimer)
     await Promise.race([this.snapshotAll(), new Promise((r) => setTimeout(r, 2000))])
     this.save.flush()
     this.persistNow()

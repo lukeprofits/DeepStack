@@ -50,6 +50,12 @@ deepstack stop      # stop the server and every terminal in it
   (top of the stack first, or the next one down). Press **Space** during the short
   send-off to stay put; whatever you type next is queued as a follow-up.
 - **"Needs you" first.** Sessions waiting on a permission prompt glow and jump the queue.
+- **Approvals come to you.** A permission prompt in another session pulls you to it once
+  you pause typing. Answer it and you're taken to the next one waiting, then back to where
+  you were. Nothing pulls you out of a prompt you haven't answered.
+- **Background work isn't "ready".** A Claude session that went quiet only to wait on a
+  background task it started (a long command, an async agent) is left alone by auto-switch
+  and snap until the task reports back.
 - **Quick replies.** One tap sends `continue`, `yes`, `run the tests`, or anything you
   set. Some can just load into the input for you to finish.
 - **Park sessions** you aren't working on: drag one to the bottom of the stack. It keeps

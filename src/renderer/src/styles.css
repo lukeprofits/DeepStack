@@ -406,6 +406,28 @@ textarea:focus {
   color: var(--text);
 }
 
+/* "N approvals waiting": permission prompts that haven't pulled you over yet. */
+.header-action.is-approvals {
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--accent);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 12px -3px color-mix(in srgb, var(--accent) 60%, transparent);
+  animation: approvals-glow 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes approvals-glow {
+  to {
+    box-shadow: 0 0 18px -2px color-mix(in srgb, var(--accent) 85%, transparent);
+  }
+}
+
+.header-action.is-approvals:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 
 
 .warning {
@@ -448,8 +470,9 @@ textarea:focus {
 /* Two matching cards: Quick replies and the active session's queue. Fixed height, so queueing
    or removing messages never resizes the big terminal (no Claude reflow). */
 .bottom-bar {
-  /* Card = 36px header + 1px rule + three 30px rows + 8px list padding + 2px border; plus the gutter. */
-  --bb-h: calc(137px + var(--gutter));
+  /* Card = 36px header + 1px rule + the Queued input (~36px) + three 28px rows + 8px list padding
+     + 2px border; plus the gutter. */
+  --bb-h: calc(167px + var(--gutter));
   flex: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -485,10 +508,6 @@ textarea:focus {
   color: var(--accent);
 }
 
-.bb-queue .bb-icon {
-  color: var(--c);
-}
-
 .bb-title {
   min-width: 0;
   overflow: hidden;
@@ -505,13 +524,6 @@ textarea:focus {
   font-weight: 500;
 }
 
-.bb-hint {
-  margin-left: auto;
-  flex: none;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .bb-count {
   flex: none;
   min-width: 20px;
@@ -524,31 +536,6 @@ textarea:focus {
   line-height: 16px;
   text-align: center;
   font-variant-numeric: tabular-nums;
-}
-
-.bb-add {
-  margin-left: auto;
-  flex: none;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 7px;
-  border: 1px solid color-mix(in srgb, var(--text) 10%, var(--border));
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-  color: color-mix(in srgb, var(--text) 80%, transparent);
-  font-size: 11.5px;
-  font-weight: 600;
-  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
-}
-
-.bb-add:hover:not(:disabled) {
-  color: var(--c);
-  border-color: color-mix(in srgb, var(--c) 45%, var(--border));
-  background: color-mix(in srgb, var(--c) 10%, transparent);
-}
-
-.bb-add:disabled {
-  opacity: 0.35;
-  cursor: default;
 }
 
 .bb-empty {
@@ -589,6 +576,22 @@ textarea:focus {
   background: color-mix(in srgb, var(--accent) 8%, var(--pill));
 }
 
+/* "+ Add new": the same shape as a reply, dashed and in the accent so it reads as a control. */
+.bb-replies .pill.pill-add {
+  gap: 6px;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--accent) 85%, var(--text));
+}
+
+.bb-replies .pill.pill-add:hover {
+  border-style: solid;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
 .pill:active:not(:disabled) {
   transform: translateY(1px);
 }
@@ -615,7 +618,7 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 30px;
+  height: 28px;
   margin: 0 6px;
   padding: 0 8px;
   border-radius: 7px;
@@ -645,19 +648,22 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 
-/* Send · edit · delete: on hover the whole row splits into three equal click targets. */
+/* Every other row a shade lighter, so neighbours are easy to tell apart. */
+.bb-item:nth-of-type(even) {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+/* On hover the row becomes two click targets: SEND NOW (most of it) and REVISE (the right part),
+   leaving the far right corner for the delete ✕. */
 .bb-item-zones {
   position: absolute;
-  inset: 0;
+  inset: 0 26px 0 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 68% 32%;
   border-radius: 7px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--c) 7%, var(--term-bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 22%, transparent);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 140ms ease;
 }
 
 .bb-item:hover .bb-item-zones,
@@ -670,100 +676,176 @@ textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  color: color-mix(in srgb, var(--text) 62%, transparent);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  outline: none;
   transition: color 120ms ease, background 120ms ease;
 }
 
-.bb-item-zones button + button {
-  border-left: 1px solid color-mix(in srgb, var(--c) 16%, transparent);
-}
-
-.bb-item-zones button:hover,
-.bb-item-zones button:focus-visible {
+.bb-item-send {
   color: var(--c);
-  background: color-mix(in srgb, var(--c) 16%, transparent);
-  outline: none;
+  background: color-mix(in srgb, var(--c) 14%, var(--term-bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 35%, transparent);
+  border-radius: 7px 0 0 7px;
 }
 
-.bb-item-zones button.is-remove:hover,
-.bb-item-zones button.is-remove:focus-visible {
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.14);
+.bb-item-send:hover,
+.bb-item-send:focus-visible {
+  background: color-mix(in srgb, var(--c) 24%, var(--term-bg));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--c) 70%, transparent);
 }
 
-/* Clicking the open space in the queue starts a new follow-up. */
-.bb-list.is-addable {
-  cursor: text;
+/* SEND NOW / REVISE glitch on as the pointer reaches them: a few frames of jitter with a split,
+   then they settle. */
+.bb-item-zones button:hover .bb-item-zone-label {
+  display: inline-block;
+  animation: send-glitch-on 260ms steps(1, end) both;
 }
 
-.bb-list.is-addable .bb-item {
-  cursor: default;
+@keyframes send-glitch-on {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-4px) skewX(-12deg);
+    text-shadow: 2px 0 rgba(255, 60, 90, 0.8), -2px 0 rgba(60, 220, 255, 0.8);
+  }
+  35% {
+    opacity: 0.35;
+    transform: translateX(3px);
+  }
+  55% {
+    opacity: 1;
+    transform: translateX(-1px) skewX(6deg);
+    text-shadow: -1px 0 rgba(255, 60, 90, 0.6), 1px 0 rgba(60, 220, 255, 0.6);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-/* Quiet "+ Queue another" row once there's something queued. */
-.bb-new {
-  display: block;
-  margin: 2px 6px 0;
-  height: 26px;
-  width: calc(100% - 12px);
-  padding: 0 32px;
-  border-radius: 7px;
-  text-align: left;
-  color: var(--muted);
-  font-size: 12px;
-  opacity: 0.55;
-  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+.bb-item-revise {
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  background: color-mix(in srgb, var(--text) 5%, var(--term-bg));
+  border-left: 1px solid color-mix(in srgb, var(--c) 22%, transparent);
+  border-radius: 0 7px 7px 0;
 }
 
-.bb-new:hover,
-.bb-new:focus-visible {
-  opacity: 1;
-  color: var(--c);
-  background: color-mix(in srgb, var(--c) 6%, transparent);
-  outline: none;
-}
-
-/* Inline composer at the bottom of the queue. */
-.bb-composer {
-  margin: 4px 8px 6px;
-}
-
-.bb-composer textarea {
-  width: 100%;
-  resize: none;
-  border-radius: 8px;
-  padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--c) 45%, var(--border));
-  background: color-mix(in srgb, var(--c) 5%, var(--panel));
+.bb-item-revise:hover,
+.bb-item-revise:focus-visible {
   color: var(--text);
-  font-size: 12.5px;
-  line-height: 1.4;
-  outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 10%, transparent);
+  background: color-mix(in srgb, var(--text) 10%, var(--term-bg));
 }
 
-/* It grows with its text (up to a few lines), so no scrollbar while it fits. */
-.bb-composer textarea {
+/* Delete: the thumbnails' hover-to-arm ✕, small, in the row's far right corner. */
+.bb-item .close-arm {
+  top: 50%;
+  left: auto;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  margin-top: -11px;
+}
+
+.bb-item .close-arm svg {
+  width: 22px;
+  height: 22px;
+}
+
+.bb-item:hover .close-arm {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+/* The Queued input: always at the top of the card, styled like Claude Code's own prompt (rules
+   above and below, a dim ">" and the terminal's font and colours) so it reads as "type here".
+   While you type it grows to fill the card and the list steps aside. */
+.bb-qinput {
+  position: relative;
+  flex: none;
+  display: flex;
+  gap: 8px;
+  margin: 6px 8px 2px;
+  padding: 7px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--term-fg) 22%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--term-fg) 22%, transparent);
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 18px;
+  cursor: text;
+  transition: border-color 160ms ease;
+}
+
+.bb-qinput:focus-within {
+  border-color: color-mix(in srgb, var(--c) 55%, transparent);
+}
+
+.bb-qinput-prompt {
+  flex: none;
+  color: color-mix(in srgb, var(--term-fg) 50%, transparent);
+}
+
+.bb-qinput textarea {
+  flex: 1;
+  min-width: 0;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
   scrollbar-width: none;
 }
 
-.bb-composer textarea::placeholder {
-  color: var(--muted);
+.bb-qinput textarea::placeholder {
+  color: color-mix(in srgb, var(--term-fg) 36%, transparent);
 }
 
-.bb-chip {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--c) 12%, transparent);
+.bb-queue.is-typing .bb-list {
+  display: none;
+}
+
+.bb-queue.is-typing .bb-qinput {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 8px;
+}
+
+.bb-queue.is-typing .bb-qinput textarea {
+  height: auto;
+  scrollbar-width: thin;
+}
+
+/* What the input is doing, when it isn't a plain new follow-up. */
+.bb-qinput-tag {
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  padding: 0 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c) 18%, var(--term-bg));
   color: var(--c);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  letter-spacing: 0.06em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-item-zones button:hover .bb-item-zone-label {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------------------ modals */
@@ -1191,7 +1273,8 @@ textarea.json {
 }
 
 /* The big terminal's session keeps its live thumbnail in the stack; the connector draws a dot
-   in the middle of it and a line to the big terminal. This is just the dot's anchor. */
+   on it and a line to the big terminal. This is just the dot's anchor. The name label covers the
+   bottom of the thumbnail, so the dot sits centred in what's above it (36% down), not dead centre. */
 .slot-marker {
   position: absolute;
   inset: 0;
@@ -1204,7 +1287,10 @@ textarea.json {
 
 /* Anchor for the connector, which draws the visible dot so it can glide between slots. */
 .slot-marker-dot {
-  flex: none;
+  position: absolute;
+  left: 50%;
+  top: 36%;
+  transform: translate(-50%, -50%);
   width: 16px;
   height: 16px;
   visibility: hidden;
@@ -1259,20 +1345,30 @@ textarea.json {
 /* Three arcs inside, four outside: dash + gap = circumference / count. */
 .slot-connector .reticle-ring.is-inner {
   stroke-dasharray: 22.1 13.5;
-  animation: reticle-spin 10s linear infinite;
+  animation: reticle-spin 3.6s linear infinite;
 }
 
 .slot-connector .reticle-ring.is-outer {
   stroke-dasharray: 23.4 14.3;
-  animation: reticle-spin 16s linear infinite reverse;
+  animation: reticle-spin 5.5s linear infinite reverse;
 }
 
 .slot-connector .reticle-ticks path {
   stroke-width: 1.2;
 }
 
+/* The crosshair ticks turn too (slower, the same way as the inner ring) while they breathe.
+   Spin and breathe use the separate rotate/scale properties so they don't fight over transform. */
 .slot-connector .reticle-ticks {
-  animation: reticle-breathe 4s ease-in-out infinite;
+  animation:
+    reticle-turn 8s linear infinite,
+    reticle-breathe 4s ease-in-out infinite;
+}
+
+@keyframes reticle-turn {
+  to {
+    rotate: 360deg;
+  }
 }
 
 @keyframes reticle-spin {
@@ -1284,16 +1380,190 @@ textarea.json {
 @keyframes reticle-breathe {
   0%,
   100% {
-    transform: scale(1);
+    scale: 1;
   }
   50% {
-    transform: scale(1.09);
+    scale: 1.09;
+  }
+}
+
+/* Lock-on (Stage's lockOn adds .is-locking each time a session takes the big terminal): the dot
+   ignites with a shockwave, the line strikes out to the window with a spark running ahead of it,
+   then the reticle spins in from wide, flickers, and snaps tight. */
+.slot-connector .tether-zap {
+  stroke: color-mix(in srgb, var(--c) 35%, #ffffff);
+  stroke-width: 3.5;
+  stroke-dasharray: 0.12 2;
+  stroke-dashoffset: 0.12;
+  opacity: 0;
+  filter: drop-shadow(0 0 6px var(--c));
+}
+
+.slot-connector .tether-shock {
+  fill: none;
+  stroke: var(--c);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.slot-connector .tether-dot,
+.slot-connector .tether-halo,
+.slot-connector .reticle-lock {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.slot-connector .tether-lock-text {
+  display: none;
+}
+
+.slot-connector.is-locking > path:first-of-type {
+  stroke-dasharray: 1 1;
+  animation: tether-draw 300ms calc(var(--lock-delay, 0ms) + 110ms) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.slot-connector.is-locking .tether-zap {
+  animation: tether-zap 420ms calc(var(--lock-delay, 0ms) + 110ms) cubic-bezier(0.4, 0, 0.6, 1) both;
+}
+
+.slot-connector.is-locking .tether-dot,
+.slot-connector.is-locking .tether-halo {
+  animation: tether-pop 700ms var(--lock-delay, 0ms) linear both;
+}
+
+.slot-connector.is-locking .tether-shock {
+  animation: tether-shock 560ms var(--lock-delay, 0ms) ease-out both;
+}
+
+.slot-connector.is-locking .reticle-lock {
+  animation: reticle-lock 1100ms calc(var(--lock-delay, 0ms) + 220ms) cubic-bezier(0.25, 0.7, 0.3, 1) both;
+}
+
+@keyframes tether-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes tether-zap {
+  0% {
+    stroke-dashoffset: 0.12;
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+
+/* Grows from nothing to a bit too big, then eases back down to its size with a tiny settle. */
+@keyframes tether-pop {
+  0% {
+    transform: scale(0);
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  45% {
+    transform: scale(2.3);
+    animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  78% {
+    transform: scale(0.88);
+    animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes tether-shock {
+  0% {
+    opacity: 1;
+    transform: scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(4.5);
+  }
+}
+
+@keyframes reticle-lock {
+  0% {
+    opacity: 0;
+    transform: scale(2.6) rotate(-90deg);
+  }
+  55% {
+    opacity: 0.9;
+    transform: scale(0.9) rotate(6deg);
+  }
+  62% {
+    opacity: 0.25;
+  }
+  68% {
+    opacity: 1;
+  }
+  76% {
+    opacity: 0.45;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* 90s Hacker: a quick "TARGET LOCKED" readout beside the reticle that fades straight away. */
+[data-fx='matrix'] .slot-connector .tether-lock-text {
+  display: block;
+  fill: color-mix(in srgb, var(--c) 40%, #ffffff);
+  stroke: none;
+  font: 700 9px var(--mono);
+  letter-spacing: 0.14em;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px var(--c));
+}
+
+[data-fx='matrix'] .slot-connector.is-locking .tether-lock-text {
+  animation: lock-text 950ms calc(var(--lock-delay, 0ms) + 760ms) linear both;
+}
+
+@keyframes lock-text {
+  /* A fast flicker on, a short hold, then a smooth fade: no late flash to pull your eye. */
+  0% {
+    opacity: 0;
+  }
+  5% {
+    opacity: 1;
+  }
+  10% {
+    opacity: 0.2;
+  }
+  15%,
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .slot-connector .reticle-ring,
-  .slot-connector .reticle-ticks {
+  .slot-connector .reticle-ticks,
+  .slot-connector.is-locking > path:first-of-type,
+  .slot-connector.is-locking .tether-zap,
+  .slot-connector.is-locking .tether-dot,
+  .slot-connector.is-locking .tether-halo,
+  .slot-connector.is-locking .tether-shock,
+  .slot-connector.is-locking .reticle-lock,
+  [data-fx='matrix'] .slot-connector.is-locking .tether-lock-text {
     animation: none;
   }
 }
@@ -1354,6 +1624,129 @@ textarea.json {
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--gc, transparent) 18%, transparent),
     0 0 28px -6px color-mix(in srgb, var(--gc, transparent) 45%, transparent);
+}
+
+/* 90s Hacker's hinged flights (Stage placeHinged): behind each swinging window, slabs at a little
+   depth give it a tile's thickness (only seen side-on); echoes smear its frame along the swing. */
+.flight-slab,
+.flight-echo {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+}
+
+.flight-slab {
+  border: 1.5px solid color-mix(in srgb, var(--gc, transparent) 75%, transparent);
+  background:
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--gc, transparent) 10%, transparent) 0 1px, transparent 1px 4px),
+    color-mix(in srgb, var(--gc, transparent) 14%, rgba(1, 6, 3, 0.92));
+  box-shadow: 0 0 18px -4px color-mix(in srgb, var(--gc, transparent) 60%, transparent);
+}
+
+.flight-echo {
+  border: 2px solid var(--gc, transparent);
+  box-shadow: 0 0 22px -6px color-mix(in srgb, var(--gc, transparent) 55%, transparent);
+}
+
+.flight-plate,
+.flight-ghost {
+  transform-origin: 0 0;
+}
+
+/* While a window swings on its hinge the stack sits between the two: the one leaving goes behind
+   it, the one arriving (near the camera) comes over it; dots, lines and the rig stay on top. */
+.is-hinging .sidebar {
+  z-index: 15;
+}
+
+.is-hinging .slot-connector {
+  z-index: 30;
+}
+
+/* Filled afterimages of the window body: the swing's motion blur. */
+.flight-trail {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--gc, transparent) 22%, transparent) 0 1px, transparent 1px 3px),
+    color-mix(in srgb, var(--gc, transparent) 26%, transparent);
+}
+
+/* Edge glitch: red and cyan copies of the frame, thrown sideways in steps (and sometimes torn). */
+.flight-split {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0;
+  box-sizing: border-box;
+  transform-origin: 0 0;
+  border-radius: 10px;
+  border: 2px solid;
+  mix-blend-mode: screen;
+}
+
+.flight-split.is-r {
+  border-color: rgba(255, 40, 90, 0.9);
+  box-shadow: 0 0 14px -2px rgba(255, 40, 90, 0.6);
+}
+
+.flight-split.is-c {
+  border-color: rgba(40, 220, 255, 0.9);
+  box-shadow: 0 0 14px -2px rgba(40, 220, 255, 0.6);
+}
+
+/* Hologram face while turning (--turn 0..1 from Stage): scanlines, a sheen that sweeps across
+   with the swing (--sweep), and a bright leading right edge. Nothing at rest. */
+[data-fx='matrix'] .flight-ghost {
+  background:
+    linear-gradient(to left, color-mix(in srgb, var(--gc, transparent) calc(var(--turn, 0) * 55%), transparent) 0, transparent 14%),
+    linear-gradient(105deg, transparent 42%, color-mix(in srgb, var(--gc, transparent) calc(var(--turn, 0) * 22%), transparent) 50%, transparent 58%) var(--sweep, 0%) 0 / 300% 100%
+      no-repeat,
+    repeating-linear-gradient(to bottom, color-mix(in srgb, var(--gc, transparent) calc(var(--turn, 0) * 14%), transparent) 0 1px, transparent 1px 3px);
+}
+
+/* The projection rig: a light cone and wires from the dot to the swinging window's corners, a
+   dashed hinge axis, and pulses running out along the wires. */
+.hinge-rig {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  width: 100vw;
+  height: 100vh;
+  overflow: visible;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.hinge-rig .rig-wire {
+  stroke: color-mix(in srgb, var(--c) 80%, #ffffff);
+  stroke-width: 1;
+  filter: drop-shadow(0 0 3px var(--c));
+}
+
+.hinge-rig .rig-pulse {
+  stroke: #eafff0;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 0.04 0.3;
+  animation: rig-pulse 420ms linear infinite;
+}
+
+.hinge-rig .rig-axis {
+  stroke: var(--c);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 5;
+}
+
+@keyframes rig-pulse {
+  to {
+    stroke-dashoffset: -0.34;
+  }
 }
 
 /* Mid-switch the stage is just background (no frame of its own); the flying windows carry the border. */
@@ -1791,6 +2184,24 @@ textarea.json {
   padding-bottom: 0;
 }
 
+/* The + (new session) bar, right above the Parked heading and pinned with it (bottom = the
+   heading's height), so it's always one click away. Auto top margin: on a short stack both sit
+   at the very bottom, so the empty space belongs to the stack above. */
+.add-bar {
+  position: sticky;
+  bottom: 48px;
+  z-index: 6;
+  flex: none;
+  display: flex;
+  margin: auto -12px -10px;
+  padding: 8px 12px 10px;
+  background: var(--sidebar);
+}
+
+.add-bar .add-session {
+  flex: 1 1 auto;
+}
+
 /* "Parked" heading: part of the list, but pinned to the bottom while scrolled out of view so it
    is always one click away. Full-bleed so it reads as a divider between the two parts. */
 .park-head {
@@ -1801,9 +2212,7 @@ textarea.json {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* Auto top margin: on a short stack the heading still sits at the very bottom, so the empty
-     space belongs to the stack above rather than looking like part of Parked. */
-  margin: auto -12px 0;
+  margin: 0 -12px;
   padding: 13px 24px 14px;
   background: var(--sidebar);
   border-top: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
@@ -1989,6 +2398,162 @@ textarea.json {
   transform: translateY(2px) scale(1.15);
 }
 
+/* While a parked session is dragged, the stack (down to the Parked heading) frames itself and
+   offers to take it back, mirroring .park-invite. The frame is see-through so the drop line
+   between slots shows; only the tag at its top is solid. */
+.stack-invite {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 6px;
+  height: var(--receive-h, 60%);
+  z-index: 22;
+  border-radius: 14px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 3%, transparent);
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 200ms ease,
+    background 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.stack-invite.is-visible {
+  opacity: 1;
+}
+
+.stack-invite-tag {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--sidebar) 90%, transparent);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.7);
+  transform: translateY(calc(-100% - 24px));
+  transition:
+    transform 300ms cubic-bezier(0.3, 1.25, 0.5, 1),
+    background 200ms ease,
+    border-color 200ms ease;
+}
+
+.stack-invite.is-visible .stack-invite-tag {
+  transform: translateY(0);
+}
+
+.stack-invite .park-icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  color: var(--accent);
+  transition: transform 240ms cubic-bezier(0.42, 0, 0.58, 1);
+}
+
+/* Pointer over the stack: lit up and ready. */
+.stack-invite.is-over {
+  border-style: solid;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent),
+    0 0 32px -4px color-mix(in srgb, var(--accent) 45%, transparent),
+    inset 0 0 40px -10px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.stack-invite.is-over .stack-invite-tag {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, var(--sidebar));
+}
+
+.stack-invite.is-over .park-icon {
+  transform: translateY(-2px) scale(1.15);
+}
+
+/* Where a parked session will land: a glowing line in its colour, in the gap above this slot. */
+.slot-drop-line {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: -6px;
+  height: 2px;
+  border-radius: 2px;
+  z-index: 23;
+  background: var(--drop-c, var(--accent));
+  box-shadow:
+    0 0 8px var(--drop-c, var(--accent)),
+    0 0 18px color-mix(in srgb, var(--drop-c, var(--accent)) 60%, transparent);
+  pointer-events: none;
+  animation: drop-line-pulse 900ms ease-in-out infinite alternate;
+}
+
+/* Below the last slot: "drop it at the bottom". */
+.slot-drop-line.is-after {
+  top: auto;
+  bottom: -6px;
+}
+
+.slot-drop-line::before,
+.slot-drop-line::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--drop-c, var(--accent));
+  box-shadow: 0 0 10px var(--drop-c, var(--accent));
+}
+
+.slot-drop-line::before {
+  left: -3px;
+}
+
+.slot-drop-line::after {
+  right: -3px;
+}
+
+@keyframes drop-line-pulse {
+  from {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The lifted parked card gets its colour back once it's over the stack. */
+.drag-card.is-parked.is-over-stack .mini {
+  filter: none;
+}
+
+/* Just back from Parked: one flash in its colour where it landed. */
+.slot.is-arrived .mini {
+  animation: slot-arrive 900ms ease-out;
+}
+
+@keyframes slot-arrive {
+  0% {
+    box-shadow: 0 0 0 0 var(--c);
+  }
+  25% {
+    box-shadow:
+      0 0 0 3px var(--c),
+      0 0 30px 4px color-mix(in srgb, var(--c) 70%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
 /* ------------------------------------------------------------------ parked look */
 
 /* Parked sessions read as "off": greyscale and dimmed, thumbnail, border and badge alike. */
@@ -2025,6 +2590,24 @@ textarea.json {
   transition: transform 220ms cubic-bezier(0.42, 0, 0.58, 1), opacity 220ms ease;
 }
 
+/* Released: back to full size and straight while it glides into its slot (Sidebar dropAnimation),
+   setting down (its lift shadow fades) and fading to the landing thumbnail's filter and opacity. */
+.drag-card.is-dropping {
+  transform: none;
+  filter: drop-shadow(0 0 0 rgba(0, 0, 0, 0));
+  opacity: var(--drop-opacity, 1);
+  transition:
+    transform var(--drop-ms, 280ms) var(--drop-ease, ease),
+    filter var(--drop-ms, 280ms) var(--drop-ease, ease),
+    opacity var(--drop-ms, 280ms) var(--drop-ease, ease);
+}
+
+.drag-card.is-dropping.is-dropping > *,
+.drag-card.is-dropping.is-dropping .mini {
+  filter: var(--drop-filter, none);
+  transition: filter var(--drop-ms, 280ms) var(--drop-ease, ease);
+}
+
 /* Over the park bar it shrinks toward the pointer: out of the way of the bar's copy, and a
    preview of being swallowed. */
 .drag-card.is-over-park {
@@ -2043,11 +2626,15 @@ textarea.json {
 @media (prefers-reduced-motion: reduce) {
   .park-items,
   .park-invite,
+  .stack-invite,
+  .stack-invite-tag,
   .park-icon {
     transition: none;
   }
   .park-head.is-ate,
-  .park-head.is-ate .park-count {
+  .park-head.is-ate .park-count,
+  .slot-drop-line,
+  .slot.is-arrived .mini {
     animation: none;
   }
 }
@@ -3125,10 +3712,6 @@ textarea.json {
   z-index: 1000;
 }
 
-.bb-hint + .bb-add {
-  margin-left: 4px;
-}
-
 /* ------------------------------------------------------------------ Matrix theme (HUD) */
 
 /* The circuit-board backdrop (fx/matrix.ts), behind everything. */
@@ -3164,6 +3747,7 @@ textarea.json {
 }
 
 /* The Parked heading and its open drawer: one solid, dark panel. */
+[data-fx='matrix'] .add-bar,
 [data-fx='matrix'] .park-head,
 [data-fx='matrix'] .park-items {
   background: rgba(1, 6, 3, 0.9);
@@ -3181,12 +3765,31 @@ textarea.json {
   border-color: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-/* HUD corner brackets on the big terminal and the cards. */
-[data-fx='matrix'] .stage::before,
-[data-fx='matrix'] .bb-card::before {
+/* HUD corner brackets on the big terminal. They breathe: easing out by --bo and back in to
+   rest (fx-bracket-breathe), like a target lock. */
+@property --bo {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@keyframes fx-bracket-breathe {
+  0%,
+  100% {
+    --bo: 0px;
+  }
+  50% {
+    --bo: var(--bo-max);
+  }
+}
+
+[data-fx='matrix'] .stage::before {
   content: '';
   position: absolute;
-  inset: -6px;
+  --rest: -6px;
+  --bo-max: 5px;
+  inset: calc(var(--rest) - var(--bo));
+  animation: fx-bracket-breathe 3.2s ease-in-out infinite;
   pointer-events: none;
   z-index: 30;
   --b: color-mix(in srgb, var(--accent) 75%, transparent);
@@ -3208,9 +3811,10 @@ textarea.json {
   overflow: visible;
 }
 
-[data-fx='matrix'] .bb-card::before {
-  inset: -4px;
-  --b: color-mix(in srgb, var(--accent) 55%, transparent);
+@media (prefers-reduced-motion: reduce) {
+  [data-fx='matrix'] .stage::before {
+    animation: none;
+  }
 }
 
 /* Labels read like HUD readouts: "// QUICK REPLIES". */
@@ -3236,26 +3840,6 @@ textarea.json {
   text-shadow:
     0 0 8px color-mix(in srgb, var(--accent) 60%, transparent),
     0 0 18px color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
-/* Primary buttons: filled mint with fine scan stripes, like a HUD control. */
-[data-fx='matrix'] .bb-add {
-  border-color: transparent;
-  background:
-    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.12) 0 1px, transparent 1px 3px),
-    color-mix(in srgb, var(--accent) 78%, #e8fff0);
-  color: #03140a;
-  font-weight: 700;
-  box-shadow: 0 0 14px -2px color-mix(in srgb, var(--accent) 60%, transparent);
-}
-
-[data-fx='matrix'] .bb-add:hover:not(:disabled) {
-  color: #03140a;
-  border-color: transparent;
-  background:
-    repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 0 1px, transparent 1px 3px),
-    color-mix(in srgb, var(--accent) 60%, #ffffff);
-  box-shadow: 0 0 20px 0 color-mix(in srgb, var(--accent) 65%, transparent);
 }
 
 [data-fx='matrix'] .pill {
@@ -3319,9 +3903,43 @@ textarea.json {
   filter: grayscale(0.35) brightness(0.8);
 }
 
+/* Sweeping the pointer down the stack: each thumbnail glitches out for a moment as you reach it
+   (lib/thumbGlitch.ts rolls a fresh, stepped animation each time), so you can see which one you're
+   on. These are the short-lived copies it lays on top. */
+/* Settings → Effects → Banner text: one per line. */
+.sx-hack-texts {
+  width: 260px;
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mini-ghost {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0;
+}
+
+.mini-ghost.is-r {
+  filter: url(#fx-ch-r);
+}
+
+.mini-ghost.is-gb {
+  filter: url(#fx-ch-gb);
+}
+
+/* The tear: a strip of the picture itself, shoved sideways. */
+.mini-ghost.is-tear {
+  mix-blend-mode: normal;
+}
+
 /* The big terminal's corner brackets: bigger and brighter than the cards'. */
 [data-fx='matrix'] .stage::before {
-  inset: -8px;
+  --rest: -8px;
+  --bo-max: 7px;
   --b: var(--accent);
   background-size: 20px 2px, 2px 20px, 20px 2px, 2px 20px, 20px 2px, 2px 20px, 20px 2px, 2px 20px;
 }
@@ -3409,7 +4027,9 @@ textarea.json {
 }
 
 .fx-hack-text {
-  font-size: clamp(36px, 10.5cqw, 150px);
+  /* --hack-len (characters, min 10; set by fx/matrix.ts) shrinks long custom texts to fit. */
+  font-size: min(clamp(36px, 10.5cqw, 150px), calc(122cqw / var(--hack-len, 10)));
+  white-space: nowrap;
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.06em;
@@ -3621,8 +4241,7 @@ textarea.json {
     0 0 70px 6px rgba(0, 0, 0, 0.5);
 }
 
-[data-fx='matrix'] .stage::before,
-[data-fx='matrix'] .bb-card::before {
+[data-fx='matrix'] .stage::before {
   filter: drop-shadow(0 0 calc(4px + 8px * var(--fx-excite, 0)) color-mix(in srgb, var(--accent) calc(60% + 40% * var(--fx-excite, 0)), transparent));
 }
 

@@ -82,6 +82,13 @@ describe('reduceStatus', () => {
     expect(back.sentOff).toBe(true)
   })
 
+  it('a busy title right after a permission prompt does not hide it', () => {
+    const busy = run(started(), [{ k: 'hook', name: 'UserPromptSubmit', payload: {} }]).rt
+    const att = reduceStatus(busy, { k: 'hook', name: 'PermissionRequest', payload: {} }, { focused: false, now: 20_000 }).rt
+    // Claude's spinner title can redraw after the prompt is up: still waiting on the human.
+    expect(reduceStatus(att, { k: 'title', title: '◐ Task' }, { focused: false, now: 20_100 }).rt.phase).toBe('attention')
+  })
+
   it('idle_prompt notifications do not raise attention', () => {
     expect(reduceStatus(started(), { k: 'hook', name: 'Notification', payload: { notification_type: 'idle_prompt' } }, focused).rt.phase).toBe('idle')
   })

@@ -89,7 +89,7 @@ class Client {
           this.state.forEach((f) => f(msg.state as AppState))
           break
         case 'sendOff':
-          this.sendOff.forEach((f) => f({ id: msg.id, target: msg.target, ms: msg.ms, at: Date.now() }))
+          this.sendOff.forEach((f) => f({ id: msg.id, target: msg.target, ms: msg.ms, reason: msg.reason ?? 'sendOff', left: msg.left ?? 0, at: Date.now() }))
           break
         case 'snap':
           this.snap.forEach((f) => f({ id: msg.id, from: msg.from }))

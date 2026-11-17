@@ -5,7 +5,7 @@ import { startOverlay, type Overlay } from '../fx/overlay'
 import { liftCurtain, whenFramesSteady } from '../lib/curtain'
 
 /** The theme's animated backdrop (only the Matrix theme has one). Sits behind the whole app. */
-export function FxLayer({ theme, intensity, hackBanner }: { theme: Theme; intensity: number; hackBanner: boolean }) {
+export function FxLayer({ theme, intensity, hackBanner, hackTexts, typingGlitch }: { theme: Theme; intensity: number; hackBanner: boolean; hackTexts: string[]; typingGlitch: boolean }) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const over = useRef<HTMLCanvasElement>(null)
   const fx = useRef<MatrixFx | null>(null)
@@ -14,8 +14,8 @@ export function FxLayer({ theme, intensity, hackBanner }: { theme: Theme; intens
 
   useEffect(() => {
     if (!on || !canvas.current) return
-    fx.current = startMatrix(canvas.current, { intensity, accent: theme.ui.accent })
-    if (over.current) fg.current = startOverlay(over.current, { intensity, accent: theme.ui.accent, onKey: () => fx.current?.burst() })
+    fx.current = startMatrix(canvas.current, { intensity, accent: theme.ui.accent, typingGlitch })
+    if (over.current) fg.current = startOverlay(over.current, { intensity, accent: theme.ui.accent, onKey: () => fx.current?.burst(), parallax: () => fx.current?.parallax() ?? [0, 0] })
     // Warm up under the curtain (fonts, the terminal attaching, first frames of every effect),
     // then lift it and play the boot sequence on frames that are already smooth.
     let cancelled = false
@@ -45,6 +45,16 @@ export function FxLayer({ theme, intensity, hackBanner }: { theme: Theme; intens
     fx.current?.setIntensity(intensity)
     fg.current?.setIntensity(intensity)
   }, [intensity])
+
+  useEffect(() => {
+    fx.current?.setTypingGlitch(typingGlitch)
+  }, [typingGlitch])
+
+  const textsKey = hackTexts.join('\n')
+  useEffect(() => {
+    fx.current?.setHackTexts(hackTexts)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textsKey, on])
 
   if (!on) return null
   return (
@@ -78,6 +88,37 @@ export function FxLayer({ theme, intensity, hackBanner }: { theme: Theme; intens
       )}
       {/* Typing "rip": jagged horizontal bands that slide the chrome apart (driven by fx/matrix.ts). */}
       <svg className="fx-defs" aria-hidden width="0" height="0">
+        {/* Thumbnail hover rip: a band or two of the whole slot shoved well sideways; mostly whole
+            (lib/thumbGlitch.ts sets the scale and seed each frame). */}
+        <filter id="fx-thumb-rip" x="-25%" y="0" width="150%" height="100%" colorInterpolationFilters="sRGB">
+          <feTurbulence id="fx-thumb-rip-noise" type="fractalNoise" baseFrequency="0.00008 0.012" numOctaves="1" seed="1" result="n" />
+          <feComponentTransfer in="n" result="steps">
+            <feFuncR type="discrete" tableValues="0.5 0.5 0.5 0.1 0.5 0.5 0.9 0.5 0.5 0.5" />
+            <feFuncG type="linear" slope="0" intercept="0.5" />
+          </feComponentTransfer>
+          <feDisplacementMap id="fx-thumb-rip-map" in="SourceGraphic" in2="steps" scale="0" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        {/* Heat shimmer on a window swinging on its hinge (Stage placeHinged sets scale and seed). */}
+        <filter id="fx-heat" x="-4%" y="-4%" width="108%" height="108%" colorInterpolationFilters="sRGB">
+          <feTurbulence id="fx-heat-noise" type="turbulence" baseFrequency="0.006 0.022" numOctaves="2" seed="3" result="n" />
+          <feDisplacementMap id="fx-heat-map" in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        {/* Digital tears on a swinging window: a band or two slipped sideways, in bursts (Stage). */}
+        <filter id="fx-wtear" x="-10%" y="0" width="120%" height="100%" colorInterpolationFilters="sRGB">
+          <feTurbulence id="fx-wtear-noise" type="fractalNoise" baseFrequency="0.00008 0.009" numOctaves="1" seed="5" result="n" />
+          <feComponentTransfer in="n" result="steps">
+            <feFuncR type="discrete" tableValues="0.5 0.5 0.5 0.15 0.5 0.5 0.85 0.5 0.5 0.5" />
+            <feFuncG type="linear" slope="0" intercept="0.5" />
+          </feComponentTransfer>
+          <feDisplacementMap id="fx-wtear-map" in="SourceGraphic" in2="steps" scale="0" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        {/* Single-channel copies for the thumbnail hover glitch (lib/thumbGlitch.ts). */}
+        <filter id="fx-ch-r" colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" />
+        </filter>
+        <filter id="fx-ch-gb" colorInterpolationFilters="sRGB">
+          <feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0" />
+        </filter>
         <filter id="fx-rip" x="-60%" y="0" width="220%" height="100%" colorInterpolationFilters="sRGB">
           <feTurbulence id="fx-rip-noise" type="fractalNoise" baseFrequency="0.00008 0.02" numOctaves="1" seed="1" result="n" />
           <feComponentTransfer in="n" result="steps">

@@ -112,3 +112,46 @@ export const XIcon = ({ size = 14 }: { size?: number }) => (
     <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 )
+
+const RING_R = 12
+const RING_LEN = 2 * Math.PI * RING_R
+
+/**
+ * Accident-proof close/delete (thumbnails, queued messages). The ✕ shows when its row is hovered; hovering the ✕ itself draws a
+ * ring around it (0.6s, CSS animation). Only once the ring closes does it turn red and accept a
+ * click; an early click just flashes the ring. Never starts a drag or activates the slot.
+ */
+export function CloseArm({ label, onArmedClick }: { label: string; onArmedClick: () => void }) {
+  const [phase, setPhase] = useState<'idle' | 'arming' | 'armed'>('idle')
+  const [nudge, setNudge] = useState(0)
+  return (
+    <button
+      className={['close-arm', `is-${phase}`, nudge ? `nudge-${nudge % 2}` : ''].join(' ')}
+      style={{ ['--ring-len' as string]: RING_LEN }}
+      title={phase === 'armed' ? label : 'Keep hovering to arm'}
+      aria-label={label}
+      onPointerEnter={() => setPhase('arming')}
+      onPointerLeave={() => setPhase('idle')}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (phase === 'armed') onArmedClick()
+        else setNudge((n) => n + 1)
+      }}
+    >
+      <svg viewBox="0 0 28 28" aria-hidden>
+        <circle className="close-arm-track" cx="14" cy="14" r={RING_R} />
+        <circle
+          className="close-arm-ring"
+          cx="14"
+          cy="14"
+          r={RING_R}
+          onAnimationEnd={(e) => {
+            if (e.animationName === 'close-arm-draw') setPhase((p) => (p === 'arming' ? 'armed' : p))
+          }}
+        />
+        <path className="close-arm-x" d="M10.2 10.2l7.6 7.6M17.8 10.2l-7.6 7.6" />
+      </svg>
+    </button>
+  )
+}

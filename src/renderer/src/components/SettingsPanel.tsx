@@ -111,6 +111,13 @@ function AutoSwitch({ settings }: { settings: Settings }) {
           <Toggle label="Needs-you first" checked={settings.attentionFirst} onChange={(v) => set({ attentionFirst: v })} />
         </SettingRow>
         <SettingRow
+          label="Jump to approvals"
+          desc="A permission prompt in another session pulls you to it once you pause typing. Answer it and you're taken to the next, then back where you were. Never pulled out of one you haven't answered."
+          disabled={settings.advanceMode === 'off'}
+        >
+          <Toggle label="Jump to approvals" checked={settings.grabApprovals ?? true} disabled={settings.advanceMode === 'off'} onChange={(v) => set({ grabApprovals: v })} />
+        </SettingRow>
+        <SettingRow
           label="Snap to higher sessions"
           desc="Jump the moment a session above finishes or needs you, even mid-typing. Your text stays in that terminal."
           disabled={settings.advanceMode !== 'priority'}
@@ -254,6 +261,29 @@ function ThemePreview({ t }: { t: Theme }) {
   )
 }
 
+/** One banner text per line; saved when you leave the box, so typing a new line isn't fought. */
+function HackTexts({ texts }: { texts: string[] }) {
+  const [draft, setDraft] = useState(texts.join('\n'))
+  const saved = texts.join('\n')
+  useEffect(() => setDraft(saved), [saved])
+  const commit = () => {
+    const list = draft.split('\n').map((t) => t.trim()).filter(Boolean)
+    if (list.join('\n') !== saved) set({ hackTexts: list })
+  }
+  return (
+    <textarea
+      className="sx-input sx-hack-texts"
+      rows={4}
+      value={draft}
+      placeholder={'HACKING...\nDELIVERING VALUE\nBEING A SOFTWARE ENGINEER'}
+      spellCheck={false}
+      aria-label="Banner texts, one per line"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+    />
+  )
+}
+
 function Appearance({ state }: { state: AppState }) {
   const current = findTheme(state.settings.themeId, state.customThemes)
   const all = useMemo(() => [...BUILT_IN_THEMES, ...state.customThemes], [state.customThemes])
@@ -305,6 +335,17 @@ function Appearance({ state }: { state: AppState }) {
           </SettingRow>
           <SettingRow label="HACKING... banner" desc="A giant red movie-hacker banner flashes over the terminal while you type.">
             <Toggle label="HACKING... banner" checked={state.settings.hackBanner ?? false} onChange={(v) => set({ hackBanner: v })} />
+          </SettingRow>
+          {state.settings.hackBanner && (
+            <SettingRow
+              label="Banner text"
+              desc="Your own words instead of HACKING..., one per line. One is picked at random each time you start typing after a 5 second pause, then it holds while you type. Leave empty for HACKING...."
+            >
+              <HackTexts texts={state.settings.hackTexts ?? []} />
+            </SettingRow>
+          )}
+          <SettingRow label="Glitch effects when typing" desc="The sidebar, header and bottom bar tear, shake and fringe while you type. Never the terminals.">
+            <Toggle label="Glitch effects when typing" checked={state.settings.typingGlitch ?? true} onChange={(v) => set({ typingGlitch: v })} />
           </SettingRow>
         </Card>
       )}

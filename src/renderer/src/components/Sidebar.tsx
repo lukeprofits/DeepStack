@@ -5,13 +5,15 @@ import {
   MeasuringStrategy,
   PointerSensor,
   closestCenter,
+  defaultDropAnimationSideEffects,
   useDroppable,
   useSensor,
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
-  type DragStartEvent
+  type DragStartEvent,
+  type DropAnimation
 } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -20,10 +22,12 @@ import { sessionColor } from '../lib/theme'
 import { displayName, stackPosition } from '../lib/session'
 import { stack } from '../lib/port'
 import { attachBounce } from '../lib/overscroll'
+import { glitchThumb } from '../lib/thumbGlitch'
+import { CloseArm } from './controls'
 import { MiniCanvas } from './MiniCanvas'
 import { SidebarResizer } from './SidebarResizer'
 import type { StageVisual } from './Stage'
-import { ParkInvite, ParkSection, ZONE_PARKED } from './ParkDrawer'
+import { ParkInvite, ParkSection, StackInvite, ZONE_PARKED } from './ParkDrawer'
 
 interface Props {
   /** Ask to close a session (the ✕ on a thumbnail, once armed). App confirms first. */
@@ -38,6 +42,42 @@ interface Props {
 
 const ZONE_ACTIVE = 'zone:active'
 
+const DROP_MS = 280
+const DROP_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+/**
+ * Settling a dropped card: it glides to its slot and, in the same motion, grows back from the
+ * lifted size (.drag-card's scale and tilt) to full size, so it lands exactly as the thumbnail.
+ */
+const dropAnimation: DropAnimation = {
+  duration: DROP_MS,
+  easing: DROP_EASE,
+  // Aim at where the slot really is now (after the reorder), not where dnd-kit last measured it.
+  keyframes: ({ active, dragOverlay, transform }) => {
+    const slot = document.querySelector(`[data-slot="${String(active.id)}"]`)?.getBoundingClientRect()
+    // The overlay's on-screen box right now (its own transform included).
+    const at = dragOverlay.node.getBoundingClientRect()
+    const final = slot
+      ? { ...transform.final, x: transform.initial.x + slot.left - at.left, y: transform.initial.y + slot.top - at.top }
+      : transform.final
+    return [{ transform: CSS.Transform.toString(transform.initial) }, { transform: CSS.Transform.toString(final) }]
+  },
+  sideEffects: (args) => {
+    const card = args.dragOverlay.node.querySelector<HTMLElement>('.drag-card')
+    card?.style.setProperty('--drop-ms', `${DROP_MS}ms`)
+    card?.style.setProperty('--drop-ease', DROP_EASE)
+    // ...and takes on the landing thumbnail's look as it goes (parked ones are grey and dimmed),
+    // so nothing changes in the frame it's swapped for the real one.
+    const body = document.querySelector(`[data-slot="${String(args.active.id)}"] .slot-body`)
+    if (card && body) {
+      const look = getComputedStyle(body)
+      card.style.setProperty('--drop-filter', look.filter)
+      card.style.setProperty('--drop-opacity', look.opacity)
+    }
+    card?.classList.add('is-dropping')
+    return defaultDropAnimationSideEffects({ styles: { active: { opacity: '0' } } })(args)
+  }
+}
+
 interface SlotProps {
   onRequestClose: (id: string) => void
   s: SessionConfig
@@ -45,17 +85,25 @@ interface SlotProps {
   theme: Theme
   big: boolean
   landing: boolean
+  /** A parked session dragged over the stack will land just above this slot. */
+  dropBefore: boolean
+  /** The dragged parked session will land after this one (it's the last in the stack). */
+  dropAfter: boolean
+  /** Just dragged back out of Parked: flashes once in its colour. */
+  arrived: boolean
 }
 
 /**
  * One place in the stack. While its session is the big terminal the slot keeps its space and
  * shows a marker dot; the Stage draws the line from that dot to the big terminal's border.
  */
-function Slot({ s, rt, theme, big, landing, onRequestClose }: SlotProps) {
+function Slot({ s, rt, theme, big, landing, dropBefore, dropAfter, arrived, onRequestClose }: SlotProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: s.id })
   const phase = rt?.phase ?? 'dormant'
   const color = sessionColor(theme, s.color)
   const failed = phase === 'error' || phase === 'exited'
+  // Claude working, or quiet only while a background task of its own runs (comets orbit it).
+  const thinking = phase === 'busy' || (phase === 'idle' && !!rt?.background)
 
   return (
     <div
@@ -63,15 +111,18 @@ function Slot({ s, rt, theme, big, landing, onRequestClose }: SlotProps) {
       {...attributes}
       {...listeners}
       data-slot={s.id}
-      className={['slot', big ? 'is-big' : '', landing ? 'is-landing' : '', isDragging ? 'is-dragging' : '', s.inactive ? 'is-parked' : ''].join(' ')}
+      className={['slot', big ? 'is-big' : '', landing ? 'is-landing' : '', isDragging ? 'is-dragging' : '', s.inactive ? 'is-parked' : '', arrived ? 'is-arrived' : '', thinking ? 'is-thinking' : ''].join(' ')}
       style={{
         ['--c' as string]: color,
         transform: CSS.Transform.toString(transform),
         transition
       }}
       onClick={() => void stack.intent({ t: 'activate', id: s.id })}
+      onPointerEnter={(e) => glitchThumb(e.currentTarget)}
       title={displayName(s)}
     >
+      {dropBefore && <span className="slot-drop-line" aria-hidden />}
+      {dropAfter && <span className="slot-drop-line is-after" aria-hidden />}
       <div className="slot-body">
         <div className="slot-marker" aria-hidden>
           <span className="slot-marker-dot" />
@@ -95,55 +146,14 @@ function Slot({ s, rt, theme, big, landing, onRequestClose }: SlotProps) {
             </div>
           )}
         </div>
-        <SlotLabel n={stackPosition(s)} name={displayName(s)} busy={phase === 'busy' || phase === 'starting'} />
-        <CloseArm name={displayName(s)} onArmedClick={() => onRequestClose(s.id)} />
+        <SlotLabel n={stackPosition(s)} name={displayName(s)} busy={phase === 'busy' || phase === 'starting' || (phase === 'idle' && !!rt?.background)} />
+        <CloseArm label={`Close ${displayName(s)}`} onArmedClick={() => onRequestClose(s.id)} />
       </div>
     </div>
   )
 }
 
-const RING_R = 12
-const RING_LEN = 2 * Math.PI * RING_R
 
-/**
- * Accident-proof close. The ✕ shows when its slot is hovered; hovering the ✕ itself draws a
- * ring around it (0.6s, CSS animation). Only once the ring closes does it turn red and accept a
- * click; an early click just flashes the ring. Never starts a drag or activates the slot.
- */
-function CloseArm({ name, onArmedClick }: { name: string; onArmedClick: () => void }) {
-  const [phase, setPhase] = useState<'idle' | 'arming' | 'armed'>('idle')
-  const [nudge, setNudge] = useState(0)
-  return (
-    <button
-      className={['close-arm', `is-${phase}`, nudge ? `nudge-${nudge % 2}` : ''].join(' ')}
-      style={{ ['--ring-len' as string]: RING_LEN }}
-      title={phase === 'armed' ? `Close ${name}` : 'Keep hovering to arm'}
-      aria-label={`Close ${name}`}
-      onPointerEnter={() => setPhase('arming')}
-      onPointerLeave={() => setPhase('idle')}
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation()
-        if (phase === 'armed') onArmedClick()
-        else setNudge((n) => n + 1)
-      }}
-    >
-      <svg viewBox="0 0 28 28" aria-hidden>
-        <circle className="close-arm-track" cx="14" cy="14" r={RING_R} />
-        <circle
-          className="close-arm-ring"
-          cx="14"
-          cy="14"
-          r={RING_R}
-          onAnimationEnd={(e) => {
-            if (e.animationName === 'close-arm-draw') setPhase((p) => (p === 'arming' ? 'armed' : p))
-          }}
-        />
-        <path className="close-arm-x" d="M10.2 10.2l7.6 7.6M17.8 10.2l-7.6 7.6" />
-      </svg>
-    </button>
-  )
-}
 
 /**
  * "1 │ name" on each thumbnail: depth in the stack, then the session's name. A name too long
@@ -175,8 +185,8 @@ function SlotLabel({ n, name, busy = false }: { n: number; name: string; busy?: 
       className={`slot-badge ${overflow ? 'is-clipped' : ''}`}
       style={{
         ['--shift' as string]: `${-overflow}px`,
-        // Same reading speed whatever the length.
-        ['--scroll-ms' as string]: `${Math.round(Math.max(1400, overflow * 32))}ms`
+        // Same reading speed whatever the length (~100px/s).
+        ['--scroll-ms' as string]: `${Math.round(Math.max(500, overflow * 10))}ms`
       }}
     >
       <span className={`slot-badge-n ${busy ? 'is-busy' : ''}`} title={busy ? 'Working' : undefined}>
@@ -194,9 +204,9 @@ function SlotLabel({ n, name, busy = false }: { n: number; name: string; busy?: 
 }
 
 /** The lifted copy that follows the pointer while a session is dragged. */
-function DragCard({ s, theme, origin, overPark }: { s: SessionConfig; theme: Theme; origin: string; overPark: boolean }) {
+function DragCard({ s, theme, origin, overPark, overStack }: { s: SessionConfig; theme: Theme; origin: string; overPark: boolean; overStack: boolean }) {
   return (
-    <div className={['drag-card', s.inactive ? 'is-parked' : '', overPark ? 'is-over-park' : ''].join(' ')} style={{ ['--c' as string]: sessionColor(theme, s.color), transformOrigin: origin }}>
+    <div className={['drag-card', s.inactive ? 'is-parked' : '', overPark ? 'is-over-park' : '', overStack ? 'is-over-stack' : ''].join(' ')} style={{ ['--c' as string]: sessionColor(theme, s.color), transformOrigin: origin }}>
       <div className="mini">
         <MiniCanvas id={s.id} foreground={theme.terminal.foreground} fontFamily={theme.ui.monoFont} useSnapshot={false} />
       </div>
@@ -292,19 +302,84 @@ const Chevron = ({ dir }: { dir: 'left' | 'right' }) => (
 )
 
 
+/** The order after a move, exactly as the server's 'move' intent makes it (controller.ts). */
+function movedOrder(sessions: SessionConfig[], id: string, inactive: boolean, index: number): SessionConfig[] {
+  const s = sessions.find((x) => x.id === id)
+  if (!s) return sessions
+  const rest = sessions.filter((x) => x.id !== id)
+  const group = rest.filter((x) => x.inactive === inactive)
+  const others = rest.filter((x) => x.inactive !== inactive)
+  group.splice(Math.max(0, Math.min(index, group.length)), 0, { ...s, inactive })
+  return inactive ? [...others, ...group] : [...group, ...others]
+}
+
+const orderKey = (list: SessionConfig[]) => list.map((s) => `${s.id}${s.inactive ? '-' : '+'}`).join(',')
+
 export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRequestClose }: Props) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
-  const active = state.sessions.filter((s) => !s.inactive)
-  const inactive = state.sessions.filter((s) => s.inactive)
+  // A drop shows its new order straight away, so the released card glides to where it's going
+  // rather than back to where it came from; the server's copy replaces it once it arrives.
+  const [optimistic, setOptimistic] = useState<SessionConfig[] | null>(null)
+  const serverKey = orderKey(state.sessions)
+  useEffect(() => {
+    if (optimistic && orderKey(optimistic) === serverKey) setOptimistic(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverKey])
+  // Never stuck on a guess if the server didn't take the move.
+  useEffect(() => {
+    if (!optimistic) return
+    const t = window.setTimeout(() => setOptimistic(null), 1500)
+    return () => window.clearTimeout(t)
+  }, [optimistic])
+  const sessions = optimistic
+    ? optimistic.map((o) => {
+        const live = state.sessions.find((x) => x.id === o.id)
+        return live ? { ...live, inactive: o.inactive } : o
+      }).filter((o) => state.sessions.some((x) => x.id === o.id))
+    : state.sessions
+  const active = sessions.filter((s) => !s.inactive)
+  const inactive = sessions.filter((s) => s.inactive)
   const [dragId, setDragId] = useState<string | null>(null)
   const [overPark, setOverPark] = useState(false)
+  // Dragging a parked session back: is it over the stack, and which slot will it land above?
+  const [overStack, setOverStack] = useState(false)
+  /** A slot id (land above it), 'end' (below the last one), or null. */
+  const [dropBefore, setDropBefore] = useState<string | null>(null)
+  const [arrived, setArrived] = useState<string | null>(null)
+  const areaRef = useRef<HTMLDivElement | null>(null)
   const [origin, setOrigin] = useState('50% 50%')
   // Parked starts closed on every load: those sessions are out of the way until you ask.
   const [parkOpen, setParkOpen] = useState(false)
   const [ate, setAte] = useState<{ key: number; color: string | null }>({ key: 0, color: null })
-  const dragged = dragId ? state.sessions.find((s) => s.id === dragId) : undefined
+  const dragged = dragId ? sessions.find((s) => s.id === dragId) : undefined
   const draggingFromStack = !!dragged && !dragged.inactive
+  const draggingFromPark = !!dragged && dragged.inactive
 
+  // The "back to the stack" frame covers the stack down to the + bar; that edge moves
+  // (the drawer is open, the list can scroll), so track it for as long as the drag lasts.
+  useEffect(() => {
+    if (!draggingFromPark) return
+    let raf = 0
+    const tick = () => {
+      const area = areaRef.current
+      const head = area?.querySelector('.add-bar') ?? area?.querySelector('.park-head')
+      if (area && head) {
+        const h = head.getBoundingClientRect().top - area.getBoundingClientRect().top
+        area.style.setProperty('--receive-h', `${Math.max(80, h - 14)}px`)
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [draggingFromPark])
+
+
+  // The last one left Parked: fold it away. (Dragging from the stack shows its own invite, and
+  // clicking the heading still opens the empty drawer if you want to look.)
+  const parkedCount = inactive.length
+  useEffect(() => {
+    if (parkedCount === 0) setParkOpen(false)
+  }, [parkedCount])
 
   // A session joined the parked list (drop or ⌃⇧I): the bar pops and flashes its colour.
   const parkedIds = inactive.map((s) => s.id).join(',')
@@ -328,6 +403,15 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
     const pool = args.droppableContainers.filter((c) => ids.has(String(c.id)))
     if (inPark && (!parkOpen || pool.length === 0)) return [{ id: ZONE_PARKED }]
     if (!inPark && pool.length === 0) return [{ id: ZONE_ACTIVE }]
+    // Back from Parked: aim by the pointer. It lands above the first slot whose middle is below
+    // it; past the last slot's middle it goes to the bottom (the stack zone appends).
+    if (!inPark && pt && draggingFromPark) {
+      for (const s of active) {
+        const r = document.querySelector(`.stack-list > [data-slot="${s.id}"]`)?.getBoundingClientRect()
+        if (r && pt.y < r.top + r.height / 2) return [{ id: s.id }]
+      }
+      return [{ id: ZONE_ACTIVE }]
+    }
     return closestCenter({ ...args, droppableContainers: pool })
   }
 
@@ -339,9 +423,23 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
     if (r && 'clientX' in e) setOrigin(`${e.clientX - r.left}px ${e.clientY - r.top}px`)
   }
 
-  const onDragEnd = ({ active: drag, over }: DragEndEvent) => {
+  const onDragOver = ({ over }: DragOverEvent) => {
+    const id = over ? String(over.id) : null
+    setOverPark(id === ZONE_PARKED)
+    const toStack = !!dragged?.inactive && !!id && (id === ZONE_ACTIVE || active.some((s) => s.id === id))
+    setOverStack(toStack)
+    setDropBefore(!toStack ? null : id === ZONE_ACTIVE ? (active.length ? 'end' : null) : id)
+  }
+
+  const endDrag = () => {
     setDragId(null)
     setOverPark(false)
+    setOverStack(false)
+    setDropBefore(null)
+  }
+
+  const onDragEnd = ({ active: drag, over }: DragEndEvent) => {
+    endDrag()
     if (!over) return
     const id = String(drag.id)
     const overId = String(over.id)
@@ -351,14 +449,24 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
       toInactive = overId === ZONE_PARKED
       index = (toInactive ? inactive : active).filter((s) => s.id !== id).length
     } else {
-      const target = state.sessions.find((s) => s.id === overId)
+      const target = sessions.find((s) => s.id === overId)
       if (!target) return
       toInactive = target.inactive
       const list = toInactive ? inactive : active
       index = list.findIndex((s) => s.id === overId)
     }
-    const move = () => void stack.intent({ t: 'move', id, inactive: toInactive, index })
-    const s = state.sessions.find((x) => x.id === id)
+    const s = sessions.find((x) => x.id === id)
+    const move = () => {
+      const next = movedOrder(sessions, id, toInactive, index)
+      if (orderKey(next) === orderKey(sessions)) return
+      setOptimistic(next)
+      void stack.intent({ t: 'move', id, inactive: toInactive, index })
+    }
+    // Back out of Parked: it flashes in its colour where it lands.
+    if (!toInactive && s?.inactive) {
+      setArrived(id)
+      window.setTimeout(() => setArrived((a) => (a === id ? null : a)), 1000)
+    }
     // Parked into a closed drawer: it gets eaten by the bar, then moves.
     if (toInactive && s && !s.inactive && !parkOpen) void eatIntoPark(document.querySelector('.drag-card')).then(move)
     else move()
@@ -373,6 +481,9 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
       theme={theme}
       big={s.id === visual.bigId}
       landing={s.id === visual.landingId}
+      dropBefore={s.id === dropBefore}
+      dropAfter={dropBefore === 'end' && s.id === active[active.length - 1]?.id}
+      arrived={s.id === arrived}
       onRequestClose={onRequestClose}
     />
   )
@@ -429,22 +540,23 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
         collisionDetection={collision}
         measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
         onDragStart={onDragStart}
-        onDragCancel={() => {
-          setDragId(null)
-          setOverPark(false)
-        }}
-        onDragOver={({ over }: DragOverEvent) => setOverPark(over?.id === ZONE_PARKED)}
+        onDragCancel={endDrag}
+        onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
         {/* One list in two parts: the stack, then "Parked" (greyscale) under its heading. */}
-        <div className="stack-area">
+        <div className="stack-area" ref={areaRef} style={dragged ? { ['--drop-c' as string]: sessionColor(theme, dragged.color) } : undefined}>
           <Zone id={ZONE_ACTIVE} className="stack-list" bounce>
             <SortableContext items={active.map((s) => s.id)} strategy={verticalListSortingStrategy}>
               {active.map(slot)}
             </SortableContext>
-            <button className="add-session" onClick={onNew} title="New terminal in ~ (⌃⇧N)" aria-label="New terminal">
-              +
-            </button>
+            {/* Pinned just above the Parked heading, so it's always one click away and sits
+                outside the stack's drop frame. */}
+            <div className="add-bar">
+              <button className="add-session" onClick={onNew} title="New terminal in ~ (⌃⇧N)" aria-label="New terminal">
+                +
+              </button>
+            </div>
             <ParkSection
               parked={inactive}
               renderSlot={slot}
@@ -455,10 +567,11 @@ export function Sidebar({ state, theme, visual, collapsed, onToggle, onNew, onRe
             />
           </Zone>
           <ParkInvite visible={draggingFromStack} over={overPark} />
+          <StackInvite visible={draggingFromPark} over={overStack} />
         </div>
         {/* Parking into a closed drawer runs its own "eat" animation instead of settling back. */}
-        <DragOverlay dropAnimation={draggingFromStack && !parkOpen ? null : undefined}>
-          {dragged && <DragCard s={dragged} theme={theme} origin={origin} overPark={overPark && !dragged.inactive} />}
+        <DragOverlay dropAnimation={draggingFromStack && !parkOpen ? null : dropAnimation}>
+          {dragged && <DragCard s={dragged} theme={theme} origin={origin} overPark={overPark && !dragged.inactive} overStack={overStack} />}
         </DragOverlay>
       </DndContext>
       <SidebarResizer />

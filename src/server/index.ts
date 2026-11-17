@@ -164,7 +164,7 @@ async function main(): Promise<void> {
     snapshots: join(dir, 'snapshots'),
     history: join(dir, 'history'),
     hooksFile: join(dir, 'claude-hooks.json'),
-    socket: hookSocketPath()
+    socket: hookSocketPath(dir, dataDirFor(APP_NAME))
   }
   writeLocalHookSettings(paths.hooksFile)
 
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
     paths,
     host: (m) => host.send(m),
     broadcast: (state) => web?.broadcast({ t: 'state', state }),
-    sendOff: (id, target, ms) => web.broadcast({ t: 'sendOff', id, target, ms }),
+    sendOff: (id, target, ms, reason, left) => web.broadcast({ t: 'sendOff', id, target, ms, reason, left }),
     snap: (id, from) => web.broadcast({ t: 'snap', id, from }),
     quit: () => void quit(),
     shell: process.env.SHELL || '/bin/zsh',
