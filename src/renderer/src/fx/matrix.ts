@@ -848,13 +848,22 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
    * The force field around a window swinging on its hinge (lib/fxField, written by Stage): the
    * backdrop around it ripples in thin strips like heat haze, and now and then a strip tears.
    */
-  /** One copy of the region per frame to slice strips from (drawing a canvas onto itself makes
-      Chrome copy the whole canvas for every strip). */
+  /** Per frame: a copy of the region (sliced into strips), and the rippled result (feathered,
+      then cross-faded back over the board). */
   let fieldBuf: HTMLCanvasElement | null = null
+  let fieldOut: HTMLCanvasElement | null = null
+  const sized = (c: HTMLCanvasElement) => {
+    if (c.width < canvas.width || c.height < canvas.height) {
+      c.width = canvas.width
+      c.height = canvas.height
+    }
+    return c.getContext('2d')
+  }
   function drawField(now: number): void {
     for (const f of fxField) {
       if (f.s < 0.02 || reduced) continue
-      const pad = 80
+      // The field reaches well past the window, and fades out to nothing at its edge.
+      const pad = 140
       const x0 = Math.max(0, Math.floor((f.x0 - pad) * dpr))
       const x1 = Math.min(canvas.width, Math.ceil((f.x1 + pad) * dpr))
       const y0 = Math.max(0, Math.floor((f.y0 - pad) * dpr))
@@ -863,24 +872,58 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
       const w = x1 - x0
       const hh = y1 - y0
       fieldBuf ??= document.createElement('canvas')
-      if (fieldBuf.width < w || fieldBuf.height < hh) {
-        fieldBuf.width = Math.max(fieldBuf.width, canvas.width)
-        fieldBuf.height = Math.max(fieldBuf.height, canvas.height)
-      }
-      const fb = fieldBuf.getContext('2d')
-      if (!fb) continue
+      fieldOut ??= document.createElement('canvas')
+      const fb = sized(fieldBuf)
+      const fo = sized(fieldOut)
+      if (!fb || !fo) continue
       fb.clearRect(0, 0, w, hh)
       fb.drawImage(canvas, x0, y0, w, hh, 0, 0, w, hh)
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      for (let y = y0; y < y1; ) {
-        const h = Math.max(1, Math.round((4 + rand() * 10) * dpr))
-        const wave = Math.sin((y / dpr) * 0.05 + now * 0.011) * 6 + Math.sin((y / dpr) * 0.013 - now * 0.007) * 4
+      // The rippled region: the copy, with strips slid sideways (heat haze, now and then a tear).
+      fo.globalCompositeOperation = 'copy'
+      fo.drawImage(fieldBuf, 0, 0, w, hh, 0, 0, w, hh)
+      fo.globalCompositeOperation = 'source-over'
+      for (let y = 0; y < hh; ) {
+        const h = Math.max(1, Math.round((8 + rand() * 16) * dpr))
+        const yy = (y + y0) / dpr
+        const wave = Math.sin(yy * 0.05 + now * 0.011) * 6 + Math.sin(yy * 0.013 - now * 0.007) * 4
         const tear = rand() < 0.05 ? (rand() - 0.5) * 70 : 0
         const dx = Math.round((wave + tear) * f.s * dpr)
-        if (dx) ctx.drawImage(fieldBuf, 0, y - y0, w, h, x0 + dx, y, w, h)
+        if (dx) {
+          fo.clearRect(0, y, w, h)
+          fo.drawImage(fieldBuf, 0, y, w, h, dx, y, w, h)
+          const gx = dx > 0 ? 0 : w + dx
+          fo.drawImage(fieldBuf, gx, y, Math.abs(dx), h, gx, y, Math.abs(dx), h)
+        }
         y += h
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      // Feather it like a mask: an oval that's solid in the middle and fades to nothing at the
+      // region's edge, so the ripple never shows a hard line.
+      const feather = () => {
+        const g = fo.createRadialGradient(0, 0, 0, 0, 0, 1)
+        g.addColorStop(0, 'rgba(0,0,0,1)')
+        g.addColorStop(0.62, 'rgba(0,0,0,1)')
+        g.addColorStop(1, 'rgba(0,0,0,0)')
+        return g
+      }
+      const oval = (c: CanvasRenderingContext2D, ox: number, oy: number) => {
+        c.save()
+        c.translate(ox + w / 2, oy + hh / 2)
+        c.scale(w / 2, hh / 2)
+        c.fillStyle = feather()
+        c.fillRect(-1, -1, 2, 2)
+        c.restore()
+      }
+      fo.globalCompositeOperation = 'destination-in'
+      oval(fo, 0, 0)
+      fo.globalCompositeOperation = 'source-over'
+      // Cross-fade: take the board out by the mask, add the rippled copy back in by the mask.
+      ctx.save()
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.globalCompositeOperation = 'destination-out'
+      oval(ctx, x0, y0)
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.drawImage(fieldOut, 0, 0, w, hh, x0, y0, w, hh)
+      ctx.restore()
     }
   }
 
@@ -1345,9 +1388,13 @@ export function startMatrix(canvas: HTMLCanvasElement, opts: Opts): MatrixFx {
 
   // Draw on every display frame: capping the rate below the refresh rate skips frames unevenly,
   // which reads as stutter. All motion is time-based, so speed doesn't depend on the refresh rate.
+  /** During a 90s Hacker switch the backdrop draws every other frame: it costs most then (it's
+      composited under the flying 3D layers), and at 30fps behind all that motion it doesn't show. */
+  let skipFrame = false
   function loop(now: number): void {
     if (stopped) return
     raf = requestAnimationFrame(loop)
+    if (document.documentElement.classList.contains('is-hinging') && (skipFrame = !skipFrame)) return
     const dt = (now - last) / 1000
     last = now
     // Real elapsed time, so a late frame jumps ahead instead of slowing everything down.

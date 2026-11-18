@@ -157,13 +157,27 @@ function slotTarget(id: string): DOMRect | null {
 }
 
 /**
- * 90s Hacker: windows swing in and out like doors on a vertical hinge through the thumbnails'
- * dots, instead of shrinking into them. perspective: viewer distance as a multiple of the stage
- * width (smaller = more dramatic near the camera). slabs: depths (px) of the backing layers that
- * show as a tile's thickness while it turns. echo: how far back (in frames of turn) the smeared
- * copies of the frame trail it. fade: degrees before edge-on over which a window fades out.
+ * 90s Hacker: the switch is a catch and a throw. The next window comes flying past from far out
+ * (somewhere off to the right, random each time); the dot's line lashes out like a lasso, catches
+ * it and reels it into the stage with a springy overshoot. The current one is swung on its line
+ * like a sling around its dot, let go, and flung off tumbling into the background.
+ * clickMs: how long a clicked switch takes. perspective: viewer distance (× stage width).
+ * catchAt/releaseAt: when in each window's part of the switch the catch / the release happens;
+ * lasso: how long (of the incoming part) the line takes to reach it; snap: how long the let-go
+ * line takes to whip back. slabs/echo: thickness, smear.
  */
-const HINGE = { perspective: 2.2, slabs: [10, 22], echo: [1.4, 2.8, 4.2, 5.6], fade: 8, tilt: 45 }
+const HINGE = {
+  clickMs: 1100,
+  perspective: 2.2,
+  slabs: [16],
+  echo: [1.6, 3.6],
+  catchAt: [0.26, 0.34],
+  lasso: 0.16,
+  releaseAt: [0.26, 0.32],
+  snap: 0.1,
+  /** How deep a thrown window falls (× stage width): down the shaft until it's a speck. */
+  sinkDepth: 45
+}
 /**
  * The swing's look (90s Hacker). echoA: opacity of each frame echo; trail/trailA: lags and
  * opacity of the filled body afterimages (motion blur); split: red/cyan frame offset range (px),
@@ -171,9 +185,9 @@ const HINGE = { perspective: 2.2, slabs: [10, 22], echo: [1.4, 2.8, 4.2, 5.6], f
  * strength of the projection rig from the dot; flicker: chance per frame a wire drops out.
  */
 const HINGE_FX = {
-  echoA: [0.45, 0.28, 0.16, 0.08],
-  trail: [2, 4],
-  trailA: [0.18, 0.08],
+  echoA: [0.4, 0.18],
+  trail: [2.5],
+  trailA: [0.16],
   split: [2, 9],
   splitStep: [40, 70],
   tear: 0.3,
@@ -181,7 +195,7 @@ const HINGE_FX = {
   wire: 0.75,
   flicker: 0.12,
   /** Heat distortion: peak displacement (px) mid-swing, and how often it re-shimmers (ms). */
-  heat: 12,
+  heat: 34,
   heatStep: 50,
   /** Window tears: chance a step tears at all, and its strength (px) mid-swing. */
   tearChance: 0.5,
@@ -190,19 +204,64 @@ const HINGE_FX = {
   chroma: [4, 14]
 }
 const rnd = (a: number, b: number) => a + Math.random() * (b - a)
-/** A random tilt for a window's hinge (degrees off vertical), so each one swings in or out from somewhere new. */
-const pickTilt = () => rnd(-HINGE.tilt, HINGE.tilt)
+const sgn = () => (Math.random() < 0.5 ? -1 : 1)
+
+// ---- 3D poses for the catch and the throw. A pose turns a window about its own rest centre by
+// Euler angles e (degrees) and moves it by t (px; z toward you). Same conventions as CSS.
+type V3 = [number, number, number]
+type M3 = number[]
+interface Pose {
+  e: V3
+  t: V3
+}
+const REST: Pose = { e: [0, 0, 0], t: [0, 0, 0] }
+const mul3 = (a: M3, b: M3): M3 => {
+  const o: M3 = []
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) o.push(a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c])
+  return o
+}
+/** rotateZ · rotateY · rotateX, as CSS would apply rotateZ() rotateY() rotateX(). */
+function euler([rx, ry, rz]: V3): M3 {
+  const [a, b, c] = [rx, ry, rz].map((d) => (d * Math.PI) / 180)
+  const X = [1, 0, 0, 0, Math.cos(a), -Math.sin(a), 0, Math.sin(a), Math.cos(a)]
+  const Y = [Math.cos(b), 0, Math.sin(b), 0, 1, 0, -Math.sin(b), 0, Math.cos(b)]
+  const Z = [Math.cos(c), -Math.sin(c), 0, Math.sin(c), Math.cos(c), 0, 0, 0, 1]
+  return mul3(Z, mul3(Y, X))
+}
+const apply3 = (m: M3, v: V3): V3 => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]]
+const mixPose = (a: Pose, b: Pose, k: number): Pose => ({
+  e: a.e.map((v, i) => v + (b.e[i] - v) * k) as V3,
+  t: a.t.map((v, i) => v + (b.t[i] - v) * k) as V3
+})
+/** CSS matrix3d (column-major) for rotation m then translation t. */
+const css3d = (m: M3, t: V3) =>
+  `matrix3d(${[m[0], m[3], m[6], 0, m[1], m[4], m[7], 0, m[2], m[5], m[8], 0, t[0], t[1], t[2], 1].map((v) => +v.toFixed(5)).join(',')})`
+
+/** Each switch's dice (kept small): how the next window's swing in falls short, when it's
+    caught; how the current one is swung and thrown. */
+interface Flight {
+  /** The in-swing: vertical offset (× W), roll (deg), and how far ajar it stops (× 200°, ~22-28°). */
+  dy: number
+  roll: number
+  short: number
+  uc: number
+  /** The throw: swing direction, release moment, tumble. */
+  swing: number
+  ur: number
+  tumble: V3
+}
+const rollFlight = (): Flight => ({
+  dy: rnd(-0.05, 0.05),
+  roll: rnd(-3, 3),
+  short: rnd(0.11, 0.14),
+  uc: rnd(HINGE.catchAt[0], HINGE.catchAt[1]),
+  swing: sgn(),
+  ur: rnd(HINGE.releaseAt[0], HINGE.releaseAt[1]),
+  tumble: [rnd(-40, 40), rnd(-70, 70), rnd(-60, 60)]
+})
 
 const hingedFlights = () =>
   document.documentElement.dataset.fx === 'matrix' && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-
-/** The hinge's pivot: the session's dot (or, scrolled away, any dot's x at the stage's middle). */
-function hingePoint(id: string, st: DOMRect): [number, number] {
-  const own = markerCenter(id)
-  if (own) return [own.x, own.y]
-  const any = document.querySelector('.stack-list .slot-marker-dot')?.getBoundingClientRect()
-  return [any && any.width ? any.left + any.width / 2 : st.left - 160, st.top + st.height / 2]
-}
 
 /** Opacity of a flying copy at slot-progress q (0 = big, 1 = in its slot): it hands over to the mini near the slot. */
 const HANDOFF = 0.85
@@ -220,8 +279,8 @@ interface Anim {
   /** Server confirmed the switch (activeId === to). */
   committed: boolean
   p: number
-  /** 90s Hacker: each window's hinge tilt (degrees), [incoming, outgoing]. */
-  tilt: [number, number]
+  /** 90s Hacker: this switch's catch-and-throw dice. */
+  fl: Flight
 }
 
 /**
@@ -252,8 +311,11 @@ export function Stage(props: Props) {
   /** Hinged flights (90s Hacker): per window [incoming, outgoing], two backing slabs and two echoes. */
   const slabEls = useRef<(HTMLDivElement | null)[]>([])
   const echoEls = useRef<(HTMLDivElement | null)[]>([])
-  /** Each window's angle last frame, for the echoes' smear. */
-  const lastTheta = useRef<[number, number]>([0, 0])
+  /** Each window's pose and corners last frame (for the smear and its speed), and the throw's
+      release state (its pose and velocity, and where the line let go). */
+  const lastPose = useRef<[Pose | null, Pose | null]>([null, null])
+  const lastCorners = useRef<[[number, number][] | null, [number, number][] | null]>([null, null])
+  const release = useRef<{ pose: Pose; vel: Pose; at: [number, number] | null } | null>(null)
   /** The swing's dressing (HINGE_FX), per window [in, out]: filled afterimages, red/cyan frame copies, the rig. */
   const trailEls = useRef<(HTMLDivElement | null)[]>([])
   const splitEls = useRef<(HTMLDivElement | null)[]>([])
@@ -285,6 +347,8 @@ export function Stage(props: Props) {
     // Mid-flight, wait until the incoming window has cleared the slot, or it plays unseen.
     svg.style.setProperty('--lock-delay', `${Math.round(delayMs)}ms`)
     svg.classList.remove('is-locking')
+    // With the catch (90s Hacker), the lasso draws the line itself; the lock-on keeps the rest.
+    svg.classList.toggle('is-lasso-lock', hingedFlights())
     void svg.getBoundingClientRect()
     svg.classList.add('is-locking')
   }, [])
@@ -408,8 +472,14 @@ export function Stage(props: Props) {
       g.style.transform = ''
     }
     for (const r of rigEls.current) if (r) r.style.opacity = '0'
-    for (const g of [ghostRef.current, ghostInRef.current]) g?.style.setProperty('--turn', '0')
-    lastTheta.current = [0, 0]
+    for (const g of [ghostRef.current, ghostInRef.current]) {
+      g?.style.setProperty('--turn', '0')
+      g?.style.setProperty('--mist', '0')
+    }
+    lastPose.current = [null, null]
+    lastCorners.current = [null, null]
+    release.current = null
+    for (const svg of [connectorRef.current, connectorOutRef.current]) svg?.classList.remove('is-lassoing', 'is-caught', 'is-snapped')
     // The incoming frame has landed exactly on the stage's border: take over without a colour fade.
     const stage = frameRef.current
     if (stage?.classList.contains('is-switching')) {
@@ -478,31 +548,62 @@ export function Stage(props: Props) {
   }
 
   /**
-   * The same window, swung on the hinge instead of shrunk: q 0 = flat in the stage, 1 = edge-on.
-   * dir -1 swings in from its right side toward you; +1 swings away. slot 0 = incoming, 1 = out.
-   * Every piece gets the same projection (its own offsets, origin 0 0), so they stay locked.
+   * Lay one window (all its pieces) out at a 3D pose, with the swing's dressing. look.fade is its
+   * visibility, look.rig the projection rig's strength, look.sweep the hologram sheen's position,
+   * look.kick a burst of glitch (the catch, the release). slot 0 = incoming, 1 = outgoing.
+   * Returns the window's projected left edge (for the tether), corners and edge midpoint.
    */
-  const placeHinged = (i: 0 | 1, ghost: HTMLDivElement | null, plate: HTMLDivElement | null, id: string, q: number, dir: 1 | -1, slot: 0 | 1, tilt: number): Edge | null => {
+  const placeFlight = (
+    i: 0 | 1,
+    ghost: HTMLDivElement | null,
+    plate: HTMLDivElement | null,
+    id: string,
+    pose: Pose,
+    slot: 0 | 1,
+    /** field: scales the backdrop's force field around it (off for a window falling away). */
+    look: { fade: number; rig: number; sweep: number; kick: number; field?: number }
+  ): { edge: Edge; corners: [number, number][]; mid: [number, number] } | null => {
     const el = refs[i].current?.el
     const stage = frameRef.current
     if (!el || !stage) return null
     const st = stage.getBoundingClientRect()
-    const [hx, hy] = hingePoint(id, st)
     const ex = st.left + st.width / 2
     const ey = st.top + st.height / 2
     const P = HINGE.perspective * st.width
-    const theta = dir * 90 * q
-    const fade = clamp01((90 - Math.abs(theta)) / HINGE.fade)
-    // Nearer (incoming) above the stack (z 15 while hinging), farther (outgoing) behind it.
+    const R = euler(pose.e)
+    // Facing you (1) to edge-on (0); never shown from behind (it would read mirrored).
+    const facing = R[8]
+    const fade = look.fade * clamp01((facing - 0.06) / 0.2)
+    const turn = clamp01(1 - facing)
+    // Incoming above the stack (z 15 while hinging), outgoing behind it.
     const z = slot === 0 ? 20 : 4
-    // The hinge runs through the dot, tilted off vertical by `tilt`.
-    const tf = (L: number, T: number, deg: number, depth = 0) =>
-      `translate(${ex - L}px, ${ey - T}px) perspective(${P}px) translate(${L - ex}px, ${T - ey}px) ` +
-      `translate(${hx - L}px, ${hy - T}px) rotate(${tilt}deg) rotateY(${deg}deg)${depth ? ` translateZ(${-depth}px)` : ''} rotate(${-tilt}deg) translate(${L - hx}px, ${T - hy}px)`
+    const tf = (L: number, T: number, q: Pose, depth = 0) =>
+      `translate(${ex - L}px, ${ey - T}px) perspective(${P}px) ${css3d(euler(q.e), q.t)}${depth ? ` translateZ(${-depth}px)` : ''} translate(${L - ex}px, ${T - ey}px)`
+    // Any point of the window at rest, posed and projected to the screen (tf's steps).
+    const project = (x: number, y: number): [number, number] => {
+      const [X, Y, Z] = apply3(R, [x - ex, y - ey, 0])
+      const sc = P / Math.max(1, P - (Z + pose.t[2]))
+      return [ex + (X + pose.t[0]) * sc, ey + (Y + pose.t[1]) * sc]
+    }
+    const corners = [project(st.left, st.top), project(st.right, st.top), project(st.right, st.bottom), project(st.left, st.bottom)]
+    // How fast it's moving on screen: drives the smear, the field and the heat.
+    const prevC = lastCorners.current[slot]
+    lastCorners.current[slot] = corners
+    const moved = prevC ? Math.max(...corners.map((c, k) => Math.hypot(c[0] - prevC[k][0], c[1] - prevC[k][1]))) : 0
+    const speed = clamp01(moved / 45)
+    const prev = lastPose.current[slot] ?? pose
+    lastPose.current[slot] = pose
+    const hot = fade * Math.max(turn, speed, look.kick)
+    // On screen enough to be worth filtering?
+    const xs = corners.map((c) => c[0])
+    const ys = corners.map((c) => c[1])
+    const box = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }
+    const vis = Math.max(0, Math.min(box.x1, innerWidth) - Math.max(box.x0, 0)) * Math.max(0, Math.min(box.y1, innerHeight) - Math.max(box.y0, 0))
+    // Even mostly off screen (a door swinging in big, close to you) counts: that's when the heat shows most.
+    const onScreen = vis / Math.max(1, (box.x1 - box.x0) * (box.y1 - box.y0)) > 0.04
+
     const host = (el.offsetParent ?? document.body).getBoundingClientRect()
-    const mLeft = host.left + el.offsetLeft
-    const mTop = host.top + el.offsetTop
-    el.style.transform = tf(mLeft, mTop, theta)
+    el.style.transform = tf(host.left + el.offsetLeft, host.top + el.offsetTop, pose)
     el.style.clipPath = ''
     el.style.opacity = String(fade)
     el.style.zIndex = String(z + 4)
@@ -510,107 +611,131 @@ export function Stage(props: Props) {
     const color = colorOf(id)
     for (const [g, k] of [[plate, 2], [ghost, 6]] as const) {
       if (!g) continue
-      Object.assign(g.style, frameBox, { transform: tf(st.left, st.top, theta), opacity: String(fade), zIndex: String(z + k) })
+      Object.assign(g.style, frameBox, { transform: tf(st.left, st.top, pose), opacity: String(fade), zIndex: String(z + k) })
     }
     ghost?.style.setProperty('--gc', color)
     // The tile's thickness: slabs behind the plate, only seen side-on.
     HINGE.slabs.forEach((d, k) => {
-      const g = slabEls.current[slot * 2 + k]
+      const g = slabEls.current[slot * HINGE.slabs.length + k]
       if (!g) return
-      Object.assign(g.style, frameBox, { transform: tf(st.left, st.top, theta, d), opacity: String(fade * (q > 0.001 ? 1 : 0)), zIndex: String(z - k) })
+      Object.assign(g.style, frameBox, { transform: tf(st.left, st.top, pose, d), opacity: String(turn > 0.01 ? fade : 0), zIndex: String(z - k) })
       g.style.setProperty('--gc', color)
     })
-    // Motion blur, cheaply: the frame (and, fainter, the whole body) smeared back along its
-    // swing, longer the faster it turns; nothing when it's still.
-    const dTheta = theta - lastTheta.current[slot]
-    lastTheta.current[slot] = theta
-    const speed = clamp01(Math.abs(dTheta) / 3)
+    // Motion blur, cheaply: the frame (and, fainter, the whole body) smeared back along its path.
+    const back = (lag: number) => mixPose(pose, prev, lag)
     HINGE.echo.forEach((lag, k) => {
-      const g = echoEls.current[slot * 4 + k]
+      const g = echoEls.current[slot * HINGE.echo.length + k]
       if (!g) return
-      Object.assign(g.style, frameBox, {
-        transform: tf(st.left, st.top, theta - dTheta * lag),
-        opacity: String(fade * speed * HINGE_FX.echoA[k]),
-        zIndex: String(z + 5)
-      })
+      Object.assign(g.style, frameBox, { transform: tf(st.left, st.top, back(lag)), opacity: String(fade * speed * HINGE_FX.echoA[k]), zIndex: String(z + 5) })
       g.style.setProperty('--gc', color)
     })
     HINGE_FX.trail.forEach((lag, k) => {
-      const g = trailEls.current[slot * 2 + k]
+      const g = trailEls.current[slot * HINGE_FX.trail.length + k]
       if (!g) return
-      Object.assign(g.style, frameBox, {
-        transform: tf(st.left, st.top, theta - dTheta * lag),
-        opacity: String(fade * speed * HINGE_FX.trailA[k]),
-        zIndex: String(z + 5)
-      })
+      Object.assign(g.style, frameBox, { transform: tf(st.left, st.top, back(lag)), opacity: String(fade * speed * HINGE_FX.trailA[k]), zIndex: String(z + 5) })
       g.style.setProperty('--gc', color)
     })
-    // How turned it is: drives the glitch, the hologram face and the rig (0 flat or edge-on... ish).
-    const turn = Math.sin((Math.abs(theta) * Math.PI) / 180)
-    const mid = Math.sin((Math.abs(theta) * Math.PI) / 90)
-    // Heat distortion on the content and frame while it turns (the shared filter's strength is
-    // set once per frame in frame(), from the stronger of the two swings).
-    const hot = mid * fade > 0.04
-    // Chromatic aberration on the content: the layer is see-through around its text, so red and
-    // cyan drop-shadow copies either side split the text (far cheaper than an SVG channel split).
+    // Heat, tears and the content's red/cyan split while it's thrown about (shared filters,
+    // strength set once per frame in frame()); only while it's really on screen.
+    const filtered = hot > 0.04 && onScreen
     const c = chroma.current
-    const split = Math.abs(c.dx) > 0.3 ? ` drop-shadow(${c.dx.toFixed(1)}px ${c.dy.toFixed(1)}px 0 rgba(255, 40, 90, 0.75)) drop-shadow(${(-c.dx).toFixed(1)}px ${(-c.dy).toFixed(1)}px 0 rgba(40, 220, 255, 0.75))` : ''
-    el.style.filter = hot ? `url(#fx-heat) url(#fx-wtear)${split}` : ''
-    if (ghost) ghost.style.filter = hot ? 'url(#fx-heat) url(#fx-wtear)' : ''
-    heatPeak.current = Math.max(heatPeak.current, mid * fade)
-    ghost?.style.setProperty('--turn', turn.toFixed(3))
-    ghost?.style.setProperty('--sweep', (q * 100).toFixed(1) + '%')
+    const split =
+      Math.abs(c.dx) > 0.3
+        ? ` drop-shadow(${c.dx.toFixed(1)}px ${c.dy.toFixed(1)}px 0 rgba(255, 40, 90, 0.75)) drop-shadow(${(-c.dx).toFixed(1)}px ${(-c.dy).toFixed(1)}px 0 rgba(40, 220, 255, 0.75))`
+        : ''
+    el.style.filter = filtered ? `url(#fx-heat) url(#fx-wtear)${split}` : ''
+    // The frame shimmers with it (heat only; its red/cyan copies already split it).
+    if (ghost) ghost.style.filter = filtered ? 'url(#fx-heat)' : ''
+    if (onScreen) heatPeak.current = Math.max(heatPeak.current, hot)
+    // The hologram face repaints a full-window gradient, so it only updates with the heat step.
+    if (ghost && performance.now() >= heatAt.current - 1) {
+      ghost.style.setProperty('--turn', Math.max(turn, speed * 0.6).toFixed(2))
+      ghost.style.setProperty('--sweep', (look.sweep * 100).toFixed(0) + '%')
+    }
     // Edge glitch: red and cyan copies of the frame, thrown sideways in steps, sometimes torn.
     const sp = splitState.current[slot]
     const now = performance.now()
     if (now >= sp.at) {
       sp.at = now + rnd(HINGE_FX.splitStep[0], HINGE_FX.splitStep[1])
-      sp.d = rnd(HINGE_FX.split[0], HINGE_FX.split[1]) * (Math.random() < 0.5 ? -1 : 1)
+      sp.d = rnd(HINGE_FX.split[0], HINGE_FX.split[1]) * sgn()
       const h = rnd(6, 26)
       const top = rnd(0, 100 - h)
       sp.band = Math.random() < HINGE_FX.tear ? `inset(${top.toFixed(1)}% 0 ${(100 - top - h).toFixed(1)}% 0)` : ''
     }
-    ;[1, -1].forEach((sgn, k) => {
+    const glitch = Math.min(1, Math.max(turn, speed, look.kick) * 1.6)
+    ;[1, -1].forEach((sg, k) => {
       const g = splitEls.current[slot * 2 + k]
       if (!g) return
       const torn = k === 0 && sp.band
       Object.assign(g.style, frameBox, {
-        transform: `translateX(${(sgn * sp.d * (torn ? 2.2 : 1) * turn).toFixed(1)}px) ${tf(st.left, st.top, theta)}`,
+        transform: `translateX(${(sg * sp.d * (torn ? 2.2 : 1) * glitch).toFixed(1)}px) ${tf(st.left, st.top, pose)}`,
         clipPath: torn ? sp.band : '',
-        opacity: String(fade * Math.min(1, turn * 1.6) * 0.8),
+        opacity: String(fade * glitch * 0.8),
         zIndex: String(z + 7)
       })
     })
-    // Any point of the window at rest, swung about the tilted hinge and projected to the screen
-    // (the same steps as tf, right to left).
-    const rad = (theta * Math.PI) / 180
-    const phi = (tilt * Math.PI) / 180
-    const project = (x: number, y: number): [number, number] => {
-      const px = x - hx
-      const py = y - hy
-      const x1 = px * Math.cos(-phi) - py * Math.sin(-phi)
-      const y1 = px * Math.sin(-phi) + py * Math.cos(-phi)
-      const x2 = x1 * Math.cos(rad)
-      const z2 = -x1 * Math.sin(rad)
-      const X = hx + x2 * Math.cos(phi) - y1 * Math.sin(phi)
-      const Y = hy + x2 * Math.sin(phi) + y1 * Math.cos(phi)
-      const sc = P / Math.max(1, P - z2)
-      return [ex + (X - ex) * sc, ey + (Y - ey) * sc]
-    }
-    const corners = [project(st.left, st.top), project(st.right, st.top), project(st.right, st.bottom), project(st.left, st.bottom)]
     // The force field: the backdrop ripples around where the window is (fx/matrix.ts).
-    const xs = corners.map((c) => c[0])
-    const ys = corners.map((c) => c[1])
-    Object.assign(fxField[slot], { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys), s: fade * Math.max(mid, speed * 0.6) })
-    placeRig(rigEls.current[slot], id, corners, fade * mid, color)
-    // The leaving window's rig runs out from behind the stack, like the window itself.
+    Object.assign(fxField[slot], { ...box, s: onScreen ? (look.field ?? 1) * fade * Math.max(turn, speed * 0.8, look.kick) : 0 })
+    placeRig(rigEls.current[slot], id, corners, fade * look.rig, color)
     const rig = rigEls.current[slot]
     if (rig) rig.style.zIndex = slot === 0 ? '29' : '12'
-    // The tether meets the window's left edge, swung and projected like everything else (it's
-    // slanted when the hinge is tilted, so the tether gets the edge's x at its height).
+    // The window's left edge, for the tether (slanted when the window is turned).
     const [[ax, ay], [bx, by]] = [corners[0], corners[3]]
     const xAt = (y: number) => (Math.abs(by - ay) < 0.5 ? ax : ax + ((bx - ax) * (y - ay)) / (by - ay))
-    return { left: Math.min(ax, bx), top: Math.min(ay, by), bottom: Math.max(ay, by), xAt }
+    return { edge: { left: Math.min(ax, bx), top: Math.min(ay, by), bottom: Math.max(ay, by), xAt }, corners, mid: [(ax + bx) / 2, (ay + by) / 2] }
+  }
+
+  /**
+   * The next window swings in like a door on a vertical hinge through its dot: from edge-on (its
+   * right side out toward you) to flat in the stage, easing in. The dot's line catches it on the
+   * way (fl.uc); s is how far past the catch it is (-1 before). u: 0..1.
+   */
+  const catchPose = (fl: Flight, u: number, st: DOMRect, hingeX: number): { pose: Pose; s: number } => {
+    const yaw = -90 * (1 - easeIn(u))
+    const e: V3 = [0, yaw, 0]
+    // Turned about the hinge line, not the window's centre.
+    const c0q: V3 = [st.left + st.width / 2 - hingeX, 0, 0]
+    const r = apply3(euler(e), c0q)
+    const pose: Pose = { e, t: [r[0] - c0q[0], r[1] - c0q[1], r[2]] }
+    return { pose, s: u <= fl.uc ? -1 : (u - fl.uc) / (1 - fl.uc) }
+  }
+
+  /** The current window: swung on its line around its dot, let go at fl.ur, then flung. v: 0..1. */
+  const throwPose = (fl: Flight, v: number, W: number, st: DOMRect, dot: [number, number]): Pose => {
+    const ex = st.left + st.width / 2
+    const ey = st.top + st.height / 2
+    const sling = (vv: number): Pose => {
+      const w = Math.pow(clamp01(vv / fl.ur), 2)
+      const e: V3 = [fl.swing * 8 * w, 30 * w, fl.swing * 30 * w]
+      // Swung about the dot (the pivot), pulled a little outward as the line goes taut.
+      const c0q: V3 = [ex - dot[0], ey - dot[1], 0]
+      const r = apply3(euler(e), c0q)
+      const len = Math.hypot(c0q[0], c0q[1]) || 1
+      const pull = 0.1 * W * w
+      return { e, t: [r[0] - c0q[0] + (c0q[0] / len) * pull, r[1] - c0q[1] + (c0q[1] / len) * pull, r[2] - 0.15 * W * w] }
+    }
+    if (v <= fl.ur) return sling(v)
+    // Let go: carry on with the velocity and spin it had, tumbling, into the deep background.
+    if (!release.current) {
+      const a = sling(fl.ur)
+      const b = sling(fl.ur - 0.02)
+      release.current = {
+        pose: a,
+        vel: { e: a.e.map((x, n) => (x - b.e[n]) / 0.02) as V3, t: a.t.map((x, n) => (x - b.t[n]) / 0.02) as V3 },
+        at: null
+      }
+    }
+    // Cast down the shaft: the background is a bottomless pit seen from above and the window falls
+    // away into it, shrinking fast toward the centre (perspective does most of it: even a steady
+    // fall shrinks quickly at first) until it's a speck. Its sideways offset shrinks with it.
+    const { pose: rp, vel } = release.current
+    const dv = v - fl.ur
+    const k = dv / (1 - fl.ur)
+    const g = Math.pow(k, 1.3)
+    return {
+      e: rp.e.map((x, n) => x + vel.e[n] * dv * 0.25 + fl.tumble[n] * dv) as V3,
+      t: [(rp.t[0] + vel.t[0] * dv * 0.12) * (1 - g), (rp.t[1] + vel.t[1] * dv * 0.12) * (1 - g), rp.t[2] - HINGE.sinkDepth * W * g]
+    }
   }
 
   /**
@@ -676,11 +801,81 @@ export function Stage(props: Props) {
     if (hingedFlights()) {
       document.documentElement.classList.add('is-hinging')
       heatPeak.current = 0
-      // Doors on the dots' hinge line: the current one swings away, the next swings in at you.
-      const outEdge = placeHinged(f, ghostRef.current, plateRef.current, a.from, qOut, 1, 1, a.tilt[1])
-      const inEdge = placeHinged(b, ghostInRef.current, plateInRef.current, a.to, qIn, -1, 0, a.tilt[0])
-      placeTether(connectorOutRef.current, a.from, outEdge, Math.cos((qOut * Math.PI) / 2))
-      placeTether(connectorRef.current, a.to, inEdge, Math.cos((qIn * Math.PI) / 2))
+      const st = frameRef.current?.getBoundingClientRect()
+      const W = st?.width ?? 1000
+      const fl = a.fl
+      // Each window's part of the switch, linear (each path does its own easing).
+      const u = clamp01((a.p - IN_START) / (1 - IN_START))
+      const v = clamp01(a.p / OUT_END)
+      // Going away: swung around its dot on the line, then let go and flung off into the deep.
+      const dOut = markerCenter(a.from)
+      const dotOut: [number, number] = dOut ? [dOut.x, dOut.y] : st ? [st.left - 150, st.top + st.height / 2] : [0, 0]
+      const flungK = v > fl.ur ? (v - fl.ur) / (1 - fl.ur) : 0
+      const out = st
+        ? placeFlight(f, ghostRef.current, plateRef.current, a.from, throwPose(fl, v, W, st, dotOut), 1, {
+            // Solid while it shrinks away; only fades out at the very end, a speck in the mist.
+            fade: clamp01((1 - flungK) / 0.25),
+            rig: v <= fl.ur ? Math.pow(v / fl.ur, 0.7) : 0,
+            // The force field eases off as it falls away.
+            field: 1 - flungK,
+            sweep: v,
+            kick: v > fl.ur && v < fl.ur + 0.12 ? 1 : 0
+          })
+        : null
+      // The green mist it's swallowed by as it sinks.
+      ghostRef.current?.style.setProperty('--mist', clamp01((flungK - 0.4) / 0.6).toFixed(3))
+      const svgOut = connectorOutRef.current
+      if (out && svgOut) {
+        if (v <= fl.ur) {
+          release.current = null
+          svgOut.classList.remove('is-snapped')
+          placeTether(svgOut, a.from, out.edge, 1)
+        } else {
+          // The line lets go and whips back to the dot.
+          const rel = release.current
+          if (rel && !rel.at) rel.at = out.mid
+          const at = rel?.at ?? out.mid
+          const k = clamp01((v - fl.ur) / HINGE.snap)
+          const x = lerp(at[0], dotOut[0] + 12, easeOut(k))
+          const y = lerp(at[1], dotOut[1], easeOut(k))
+          svgOut.classList.add('is-snapped')
+          placeTether(svgOut, a.from, k < 1 ? { left: x, top: y - 1, bottom: y + 1 } : null, 1 - k)
+        }
+      }
+      // Coming in: swung in on its dot (the anchor), the line catching it on the way.
+      const dIn = markerCenter(a.to)
+      const hingeIn = dIn ? dIn.x : st ? st.left - 150 : 0
+      const { pose: cp, s } = st ? catchPose(fl, u, st, hingeIn) : { pose: REST, s: 1 }
+      const inn = placeFlight(b, ghostInRef.current, plateInRef.current, a.to, cp, 0, {
+        fade: u > 0 ? 1 : 0,
+        rig: s >= 0 ? Math.pow(1 - s, 0.8) : 0,
+        sweep: u,
+        kick: s >= 0 && s < 0.14 ? 1 - s / 0.14 : 0
+      })
+      const svg = connectorRef.current
+      if (inn && svg) {
+        const lassoFrom = fl.uc - HINGE.lasso
+        if (u < lassoFrom) {
+          svg.classList.remove('is-lassoing', 'is-caught')
+          placeTether(svg, a.to, null, 0)
+        } else if (u < fl.uc) {
+          // The lasso: the line shoots out from the dot toward where the window is.
+          const d = markerCenter(a.to)
+          const k = easeOut((u - lassoFrom) / HINGE.lasso)
+          const x = d ? lerp(d.x + 12, inn.mid[0], k) : inn.mid[0]
+          const y = d ? lerp(d.y, inn.mid[1], k) : inn.mid[1]
+          svg.classList.add('is-lassoing')
+          placeTether(svg, a.to, { left: x, top: y - 1, bottom: y + 1 }, 1)
+        } else {
+          // Caught: the line goes taut on the window's edge while it's reeled in.
+          if (!svg.classList.contains('is-caught')) {
+            svg.classList.remove('is-lassoing')
+            void svg.getBoundingClientRect()
+            svg.classList.add('is-caught')
+          }
+          placeTether(svg, a.to, inn.edge, 1)
+        }
+      }
       const now = performance.now()
       if (now >= heatAt.current) {
         heatAt.current = now + HINGE_FX.heatStep
@@ -691,7 +886,7 @@ export function Stage(props: Props) {
         document.getElementById('fx-wtear-map')?.setAttribute('scale', tear.toFixed(0))
         document.getElementById('fx-wtear-noise')?.setAttribute('seed', String(Math.floor(Math.random() * 1000)))
         // Red one way, green-blue the other, thrown in steps (sometimes a little vertical kick).
-        const c = rnd(HINGE_FX.chroma[0], HINGE_FX.chroma[1]) * heatPeak.current * (Math.random() < 0.5 ? -1 : 1)
+        const c = rnd(HINGE_FX.chroma[0], HINGE_FX.chroma[1]) * heatPeak.current * sgn()
         const cy = Math.random() < 0.25 ? rnd(-2, 2) * heatPeak.current : 0
         chroma.current = { dx: c, dy: cy }
       }
@@ -740,9 +935,11 @@ export function Stage(props: Props) {
       // Instant, so the slot isn't moving while the terminal flies toward it.
       document.querySelector(`[data-slot="${CSS.escape(from)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'instant' })
       onVisual({ bigId: to, landingId: from, ms })
-      anim.current = { from, to, start: performance.now(), ms, p0: 0, target: 1, committed, p: 0, tilt: [pickTilt(), pickTilt()] }
+      const fl = rollFlight()
+      anim.current = { from, to, start: performance.now(), ms, p0: 0, target: 1, committed, p: 0, fl }
       raf.current = requestAnimationFrame(frame)
-      lockOn(to, ms * 0.4)
+      // The dot's lock-on plays as it catches the window (or, without the catch, as it lands).
+      lockOn(to, hingedFlights() ? ms * (IN_START + fl.uc * (1 - IN_START)) : ms * 0.4)
     },
     [finish, frame, onVisual, lockOn]
   )
@@ -783,7 +980,7 @@ export function Stage(props: Props) {
       })
       return
     }
-    if (state.current.displayed !== activeId) start(activeId, CLICK_MS, true)
+    if (state.current.displayed !== activeId) start(activeId, hingedFlights() ? HINGE.clickMs : CLICK_MS, true)
   }, [activeId, start, finish])
 
   useEffect(() => {
@@ -872,13 +1069,13 @@ export function Stage(props: Props) {
         />
       ))}
       {/* Hinged flights (90s Hacker): the tile's thickness and its motion smear, [in, in, out, out]. */}
-      {[0, 1, 2, 3].map((k) => (
+      {[0, 1].map((k) => (
         <div key={`s${k}`} className="flight-slab" ref={(el) => void (slabEls.current[k] = el)} />
       ))}
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((k) => (
+      {[0, 1, 2, 3].map((k) => (
         <div key={`e${k}`} className="flight-echo" ref={(el) => void (echoEls.current[k] = el)} />
       ))}
-      {[0, 1, 2, 3].map((k) => (
+      {[0, 1].map((k) => (
         <div key={`t${k}`} className="flight-trail" ref={(el) => void (trailEls.current[k] = el)} />
       ))}
       {[0, 1, 2, 3].map((k) => (

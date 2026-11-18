@@ -1665,6 +1665,45 @@ textarea.json {
   z-index: 30;
 }
 
+/* The catch and the throw (Stage, 90s Hacker): the lasso draws the line itself, so the lock-on
+   skips its own line draw and spark. */
+.slot-connector.is-locking.is-lasso-lock > path:first-of-type,
+.slot-connector.is-locking.is-lasso-lock .tether-zap {
+  animation: none;
+}
+
+/* Lashing out: a hot, thick line. */
+.slot-connector.is-lassoing > path:first-of-type {
+  stroke: color-mix(in srgb, var(--c) 45%, #ffffff);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px var(--c)) drop-shadow(0 0 14px var(--c));
+}
+
+/* Caught: the line flashes white and settles to a taut, bright line. */
+.slot-connector.is-caught > path:first-of-type {
+  animation: lasso-catch 420ms ease-out both;
+}
+
+@keyframes lasso-catch {
+  0% {
+    stroke: #ffffff;
+    stroke-width: 5;
+    filter: drop-shadow(0 0 10px #ffffff) drop-shadow(0 0 22px var(--c));
+  }
+  100% {
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 5px var(--c));
+  }
+}
+
+/* Let go: the line whips back, flickering. */
+.slot-connector.is-snapped > path:first-of-type {
+  stroke: color-mix(in srgb, var(--c) 40%, #ffffff);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  filter: drop-shadow(0 0 6px var(--c));
+}
+
 /* Filled afterimages of the window body: the swing's motion blur. */
 .flight-trail {
   position: fixed;
@@ -1704,6 +1743,8 @@ textarea.json {
    with the swing (--sweep), and a bright leading right edge. Nothing at rest. */
 [data-fx='matrix'] .flight-ghost {
   background:
+    /* A thrown window sinking into the green mist (--mist 0..1 from Stage). */
+    linear-gradient(color-mix(in srgb, var(--accent) calc(var(--mist, 0) * 55%), transparent), color-mix(in srgb, var(--accent) calc(var(--mist, 0) * 55%), transparent)),
     linear-gradient(to left, color-mix(in srgb, var(--gc, transparent) calc(var(--turn, 0) * 55%), transparent) 0, transparent 14%),
     linear-gradient(105deg, transparent 42%, color-mix(in srgb, var(--gc, transparent) calc(var(--turn, 0) * 22%), transparent) 50%, transparent 58%) var(--sweep, 0%) 0 / 300% 100%
       no-repeat,
@@ -1726,7 +1767,6 @@ textarea.json {
 .hinge-rig .rig-wire {
   stroke: color-mix(in srgb, var(--c) 80%, #ffffff);
   stroke-width: 1;
-  filter: drop-shadow(0 0 3px var(--c));
 }
 
 .hinge-rig .rig-pulse {
@@ -4214,6 +4254,16 @@ textarea.json {
 
 [data-fx='matrix'] .stage.is-switching::after {
   opacity: var(--bay-solid, 0);
+}
+
+/* During a swing (catch and throw) there's no bay at all: an empty window-shaped box left in the
+   stage would read as a ghost of the window. The arriving window's own plate covers it on landing. */
+.is-hinging .stage.is-switching {
+  background: transparent;
+}
+
+.is-hinging .stage.is-switching::after {
+  opacity: 0;
 }
 
 /* Parked is one solid, edge-to-edge panel in Matrix: the open drawer spans the sidebar's full
