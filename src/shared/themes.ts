@@ -7,7 +7,7 @@ export const BUILT_IN_THEMES: Theme[] = [
   {
     // An animated circuit-board HUD around the terminals (see renderer/src/fx/matrix.ts).
     id: 'matrix',
-    name: '90s Hacker',
+    name: 'Hacker',
     builtIn: true,
     crt: true,
     fx: 'matrix',

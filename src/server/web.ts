@@ -34,7 +34,7 @@ export interface WebDeps {
   token: string
   host: (msg: HostControl) => void
   rpc: (method: string, arg: unknown) => unknown | Promise<unknown>
-  onInput: (id: string) => void
+  onInput: (id: string, data: string) => void
   getState: () => unknown
 }
 
@@ -168,7 +168,7 @@ export class WebServer {
           break
         case 'input':
           this.deps.host({ t: 'write', id: msg.id, data: msg.data })
-          if (!TERMINAL_REPORT.test(msg.data)) this.deps.onInput(msg.id)
+          if (!TERMINAL_REPORT.test(msg.data)) this.deps.onInput(msg.id, msg.data)
           break
         case 'attach': {
           client.attached.add(msg.id)

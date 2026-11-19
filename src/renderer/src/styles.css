@@ -826,6 +826,106 @@ textarea:focus {
   scrollbar-width: thin;
 }
 
+/* Focus for typing: the card's border lights up and a comet of light circles it, so you know
+   your keys go to the queue, not the terminal. --qc is the session colour (green in Hacker). */
+@property --qa {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.bb-queue {
+  position: relative;
+  --qc: var(--c);
+  transition:
+    border-color 220ms ease,
+    box-shadow 260ms ease;
+}
+
+.bb-queue::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--qa),
+    transparent 0 62%,
+    color-mix(in srgb, var(--qc) 50%, transparent) 80%,
+    color-mix(in srgb, var(--qc) 55%, #ffffff) 92%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 260ms ease;
+}
+
+.bb-queue:focus-within {
+  border-color: color-mix(in srgb, var(--qc) 70%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--qc) 30%, transparent),
+    0 0 24px -4px color-mix(in srgb, var(--qc) 55%, transparent);
+}
+
+.bb-queue:focus-within::after {
+  opacity: 1;
+  animation:
+    queue-sweep 2.8s linear infinite,
+    queue-power 420ms ease-out;
+}
+
+@keyframes queue-sweep {
+  to {
+    --qa: 360deg;
+  }
+}
+
+/* Focus lands: the ring flashes bright, flickers once, then settles into the sweep. */
+@keyframes queue-power {
+  0% {
+    opacity: 0;
+    filter: brightness(2.4);
+  }
+  35% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+[data-fx='matrix'] .bb-queue {
+  --qc: var(--accent);
+}
+
+/* Beats the HUD's mouse-speed border tint, and keeps the card's depth shadows. */
+[data-fx='matrix'] .bb-card.bb-queue:focus-within {
+  border-color: color-mix(in srgb, var(--qc) 75%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(180, 255, 205, 0.06),
+    inset 0 0 28px -10px color-mix(in srgb, var(--qc) 40%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--qc) 30%, transparent),
+    0 0 28px -4px color-mix(in srgb, var(--qc) 60%, transparent),
+    0 16px 36px rgba(0, 0, 0, 0.8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-queue:focus-within::after {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 /* What the input is doing, when it isn't a plain new follow-up. */
 .bb-qinput-tag {
   position: absolute;
@@ -1519,7 +1619,7 @@ textarea.json {
   }
 }
 
-/* 90s Hacker: a quick "TARGET LOCKED" readout beside the reticle that fades straight away. */
+/* Hacker: a quick "TARGET LOCKED" readout beside the reticle that fades straight away. */
 [data-fx='matrix'] .slot-connector .tether-lock-text {
   display: block;
   fill: color-mix(in srgb, var(--c) 40%, #ffffff);
@@ -1626,7 +1726,7 @@ textarea.json {
     0 0 28px -6px color-mix(in srgb, var(--gc, transparent) 45%, transparent);
 }
 
-/* 90s Hacker's hinged flights (Stage placeHinged): behind each swinging window, slabs at a little
+/* Hacker's hinged flights (Stage placeHinged): behind each swinging window, slabs at a little
    depth give it a tile's thickness (only seen side-on); echoes smear its frame along the swing. */
 .flight-slab,
 .flight-echo {
@@ -1665,7 +1765,7 @@ textarea.json {
   z-index: 30;
 }
 
-/* The catch and the throw (Stage, 90s Hacker): the lasso draws the line itself, so the lock-on
+/* The catch and the throw (Stage, Hacker): the lasso draws the line itself, so the lock-on
    skips its own line draw and spark. */
 .slot-connector.is-locking.is-lasso-lock > path:first-of-type,
 .slot-connector.is-locking.is-lasso-lock .tether-zap {
@@ -2677,6 +2777,56 @@ textarea.json {
   .slot.is-arrived .mini {
     animation: none;
   }
+}
+
+/* ------------------------------------------------------------------ terminal links */
+
+/* Underlines for every link on screen (lib/termLinks.ts), over the terminal's text. */
+.term-links {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  overflow: hidden;
+  --link-c: var(--term-fg);
+}
+
+[data-fx='matrix'] .term-links {
+  --link-c: var(--accent);
+}
+
+.term-link-line {
+  position: absolute;
+  height: 1px;
+  background: color-mix(in srgb, var(--link-c) 55%, transparent);
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.term-link-line.is-hot {
+  height: 1.5px;
+  background: var(--link-c);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--link-c) 70%, transparent);
+}
+
+/* Hacker hover: red and cyan copies of the link's letters split over it for a moment. */
+.term-link-copy {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: screen;
+}
+
+.term-link-copy span {
+  position: absolute;
+  text-align: center;
+  white-space: pre;
+}
+
+.term-link-copy.is-r {
+  color: rgba(255, 40, 90, 0.85);
+}
+
+.term-link-copy.is-c {
+  color: rgba(40, 220, 255, 0.85);
 }
 
 /* ------------------------------------------------------------------ close arm (thumbnail ✕) */
@@ -3762,6 +3912,13 @@ textarea.json {
   pointer-events: none;
 }
 
+/* Hacker: the badges skip the live blur (ten of them, re-blurred whenever their thumbnail
+   redraws) for a slightly more solid backing that looks the same. */
+[data-fx='matrix'] .slot-badge {
+  background: color-mix(in srgb, var(--term-bg) 90%, transparent);
+  backdrop-filter: none;
+}
+
 [data-fx='matrix'] .app {
   position: relative;
   z-index: 1;
@@ -4014,6 +4171,15 @@ textarea.json {
   pointer-events: none;
 }
 
+/* The thrown window's burst (fx/matrix.ts drawBurstLayer places, sizes and shows it): with the
+   pit, behind the app, so the incoming window swinging in covers it. */
+.fx-burst {
+  position: fixed;
+  z-index: 0;
+  display: none;
+  pointer-events: none;
+}
+
 /* Movie-hacker banner over everything while typing (opacity set per frame by fx/matrix.ts). */
 .fx-hack {
   /* Laid over the terminal frame (rect set by fx/matrix.ts), in its top part, clear of the prompt. */
@@ -4123,8 +4289,9 @@ textarea.json {
   width: 70vmax;
   height: 70vmax;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 18%, transparent) 0%, transparent 65%);
-  mix-blend-mode: screen;
+  /* Normal blending (not screen): over the near-black board it looks the same, and it isn't a
+     full-screen blend pass every frame over a canvas that changes every frame. */
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 65%);
   will-change: transform, opacity;
 }
 
@@ -4173,8 +4340,9 @@ textarea.json {
 .fx-grain {
   position: absolute;
   inset: -120px;
-  opacity: 0.11;
-  mix-blend-mode: overlay;
+  /* Normal blending at a lower opacity, which reads as the same grain (overlay was a full-screen
+     blend pass every frame). */
+  opacity: 0.05;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   animation: fx-grain 1.6s steps(6) infinite;
   will-change: transform;
@@ -4374,4 +4542,24 @@ textarea.json {
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
+}
+
+/* TEMP (testing): the header's "hide" button hides the active window. Remove. */
+.dbg-hide-stage .stage {
+  visibility: hidden;
+}
+.dbg-hide-btn {
+  margin-left: 8px;
+  padding: 1px 6px;
+  font: 11px var(--mono, monospace);
+  color: var(--c, currentColor);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  opacity: 0.7;
+  cursor: pointer;
+}
+.dbg-hide-stage .dbg-hide-btn {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
 }

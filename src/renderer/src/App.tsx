@@ -364,6 +364,10 @@ export function App() {
         <header className="header" style={{ ['--c' as string]: active ? sessionColor(theme, active.color) : 'transparent' }}>
           {active && <span className="header-badge">{stackPosition(active)}</span>}
           <HeaderTitle session={active} />
+          {/* TEMP (testing): hide the active window to see what's behind it. Remove. */}
+          <button className="dbg-hide-btn" onClick={() => document.documentElement.classList.toggle('dbg-hide-stage')}>
+            hide
+          </button>
           {phase === 'busy' && (
             <span className="header-status is-busy">
               <i />

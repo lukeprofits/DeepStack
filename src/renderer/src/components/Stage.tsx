@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { glitchPanel } from '../lib/thumbGlitch'
 import type { TerminalTheme, SendOffReason } from '../../../shared/types'
 import { TerminalLayer, type TerminalLayerHandle } from './TerminalLayer'
-import { fxField } from '../lib/fxField'
+import { fxBurst, fxField, fxLasso, fxPit } from '../lib/fxField'
 
 /** A switch the parent wants to show: animate `from` back into its slot, revealing `to`. */
 export interface Preview {
@@ -157,17 +158,21 @@ function slotTarget(id: string): DOMRect | null {
 }
 
 /**
- * 90s Hacker: the switch is a catch and a throw. The next window comes flying past from far out
+ * Hacker: the switch is a catch and a throw. The next window comes flying past from far out
  * (somewhere off to the right, random each time); the dot's line lashes out like a lasso, catches
  * it and reels it into the stage with a springy overshoot. The current one is swung on its line
  * like a sling around its dot, let go, and flung off tumbling into the background.
- * clickMs: how long a clicked switch takes. perspective: viewer distance (× stage width).
+ * ms: how long a switch takes, clicked or sent off (the same either way). outEnd/inStart: where in
+ * it the thrown window's part ends and the incoming one's starts: the incoming waits until the
+ * throw has been watched well down the shaft (and blown up). perspective: viewer distance (× stage width).
  * catchAt/releaseAt: when in each window's part of the switch the catch / the release happens;
  * lasso: how long (of the incoming part) the line takes to reach it; snap: how long the let-go
  * line takes to whip back. slabs/echo: thickness, smear.
  */
 const HINGE = {
-  clickMs: 1100,
+  ms: 2000,
+  outEnd: 0.6,
+  inStart: 0.5,
   perspective: 2.2,
   slabs: [16],
   echo: [1.6, 3.6],
@@ -176,15 +181,19 @@ const HINGE = {
   releaseAt: [0.26, 0.32],
   snap: 0.1,
   /** How deep a thrown window falls (× stage width): down the shaft until it's a speck. */
-  sinkDepth: 45
+  sinkDepth: 110,
+  /** How far round (rad) the whirlpool winds a thrown window on its way down. */
+  swirl: 2.4
 }
 /**
- * The swing's look (90s Hacker). echoA: opacity of each frame echo; trail/trailA: lags and
+ * The swing's look (Hacker). echoA: opacity of each frame echo; trail/trailA: lags and
  * opacity of the filled body afterimages (motion blur); split: red/cyan frame offset range (px),
  * re-rolled every splitStep ms; tear: chance a split copy shows only a torn band; beam/wire:
  * strength of the projection rig from the dot; flicker: chance per frame a wire drops out.
  */
 const HINGE_FX = {
+  /** How far through its fall (flungK) the thrown window blows up (fx/matrix.ts drawBurst). */
+  burstAt: 0.7,
   echoA: [0.4, 0.18],
   trail: [2.5],
   trailA: [0.16],
@@ -279,7 +288,7 @@ interface Anim {
   /** Server confirmed the switch (activeId === to). */
   committed: boolean
   p: number
-  /** 90s Hacker: this switch's catch-and-throw dice. */
+  /** Hacker: this switch's catch-and-throw dice. */
   fl: Flight
 }
 
@@ -308,7 +317,7 @@ export function Stage(props: Props) {
   const ghostInRef = useRef<HTMLDivElement>(null)
   const plateRef = useRef<HTMLDivElement>(null)
   const plateInRef = useRef<HTMLDivElement>(null)
-  /** Hinged flights (90s Hacker): per window [incoming, outgoing], two backing slabs and two echoes. */
+  /** Hinged flights (Hacker): per window [incoming, outgoing], two backing slabs and two echoes. */
   const slabEls = useRef<(HTMLDivElement | null)[]>([])
   const echoEls = useRef<(HTMLDivElement | null)[]>([])
   /** Each window's pose and corners last frame (for the smear and its speed), and the throw's
@@ -316,6 +325,8 @@ export function Stage(props: Props) {
   const lastPose = useRef<[Pose | null, Pose | null]>([null, null])
   const lastCorners = useRef<[[number, number][] | null, [number, number][] | null]>([null, null])
   const release = useRef<{ pose: Pose; vel: Pose; at: [number, number] | null } | null>(null)
+  /** Whether this throw's burst has gone off. */
+  const burst = useRef(false)
   /** The swing's dressing (HINGE_FX), per window [in, out]: filled afterimages, red/cyan frame copies, the rig. */
   const trailEls = useRef<(HTMLDivElement | null)[]>([])
   const splitEls = useRef<(HTMLDivElement | null)[]>([])
@@ -347,7 +358,7 @@ export function Stage(props: Props) {
     // Mid-flight, wait until the incoming window has cleared the slot, or it plays unseen.
     svg.style.setProperty('--lock-delay', `${Math.round(delayMs)}ms`)
     svg.classList.remove('is-locking')
-    // With the catch (90s Hacker), the lasso draws the line itself; the lock-on keeps the rest.
+    // With the catch (Hacker), the lasso draws the line itself; the lock-on keeps the rest.
     svg.classList.toggle('is-lasso-lock', hingedFlights())
     void svg.getBoundingClientRect()
     svg.classList.add('is-locking')
@@ -363,13 +374,13 @@ export function Stage(props: Props) {
    * window and meets its border at the nearest point, so it never points at nothing.
    */
   const placeTether = useCallback(
-    (svg: SVGSVGElement | null, id: string | null, win: Edge | null, dotOpacity: number) => {
-      if (!svg) return
+    (svg: SVGSVGElement | null, id: string | null, win: Edge | null, dotOpacity: number): [number, number][] | null => {
+      if (!svg) return null
       const d = id ? markerCenter(id) : null
       const path = svg.querySelector(':scope > path')
       if (!id || !d || !win || !path || dotOpacity <= 0) {
         svg.style.opacity = '0'
-        return
+        return null
       }
       const inset = Math.min(TETHER_RADIUS + 6, (win.bottom - win.top) / 2)
       const ty = Math.min(Math.max(d.y, win.top + inset), win.bottom - inset)
@@ -407,6 +418,8 @@ export function Stage(props: Props) {
       const shown = clamp01(Math.min(d.y - d.clipTop, d.clipBottom - d.y) / (2 * DOT_CORE) + 0.5)
       svg.style.opacity = String(dotOpacity * shown)
       svg.style.setProperty('--c', colorOf(id))
+      // The line's path, dot to window (the elbow's corners, not its rounding), for the lasso's energy.
+      return [[d.x, d.y], [ex, d.y], [ex, ty], [Math.max(ex, endX), ty]]
     },
     [colorOf]
   )
@@ -466,6 +479,8 @@ export function Stage(props: Props) {
     document.getElementById('fx-wtear-map')?.setAttribute('scale', '0')
     fxField[0].s = 0
     fxField[1].s = 0
+    fxPit.s = 0
+    fxLasso.s = 0
     for (const g of [...slabEls.current, ...echoEls.current, ...trailEls.current, ...splitEls.current]) {
       if (!g) continue
       g.style.opacity = '0'
@@ -479,6 +494,7 @@ export function Stage(props: Props) {
     lastPose.current = [null, null]
     lastCorners.current = [null, null]
     release.current = null
+    burst.current = false
     for (const svg of [connectorRef.current, connectorOutRef.current]) svg?.classList.remove('is-lassoing', 'is-caught', 'is-snapped')
     // The incoming frame has landed exactly on the stage's border: take over without a colour fade.
     const stage = frameRef.current
@@ -732,9 +748,15 @@ export function Stage(props: Props) {
     const dv = v - fl.ur
     const k = dv / (1 - fl.ur)
     const g = Math.pow(k, 1.3)
+    // Caught by the whirlpool: its offset from the centre winds round (the same way the pit
+    // turns) as it closes in, and it rolls with the current.
+    const swirl = HINGE.swirl * g
+    const ox = (rp.t[0] + vel.t[0] * dv * 0.12) * (1 - g)
+    const oy = (rp.t[1] + vel.t[1] * dv * 0.12) * (1 - g)
+    const [c, sn] = [Math.cos(swirl), Math.sin(swirl)]
     return {
-      e: rp.e.map((x, n) => x + vel.e[n] * dv * 0.25 + fl.tumble[n] * dv) as V3,
-      t: [(rp.t[0] + vel.t[0] * dv * 0.12) * (1 - g), (rp.t[1] + vel.t[1] * dv * 0.12) * (1 - g), rp.t[2] - HINGE.sinkDepth * W * g]
+      e: rp.e.map((x, n) => x + vel.e[n] * dv * 0.25 + fl.tumble[n] * dv + (n === 2 ? (swirl * 180) / Math.PI * 0.8 : 0)) as V3,
+      t: [ox * c - oy * sn, ox * sn + oy * c, rp.t[2] - HINGE.sinkDepth * W * g]
     }
   }
 
@@ -796,8 +818,10 @@ export function Stage(props: Props) {
     const fromSlot = slotEl(a.from)
     if (fromSlot && a.target === 1) keepInView(fromSlot)
     // One after the other: the current window shrinks home, then the next grows out of its slot.
-    const qOut = easeOut(clamp01(a.p / OUT_END))
-    const qIn = 1 - easeIn(clamp01((a.p - IN_START) / (1 - IN_START)))
+    const outEnd = hingedFlights() ? HINGE.outEnd : OUT_END
+    const inStart = hingedFlights() ? HINGE.inStart : IN_START
+    const qOut = easeOut(clamp01(a.p / outEnd))
+    const qIn = 1 - easeIn(clamp01((a.p - inStart) / (1 - inStart)))
     if (hingedFlights()) {
       document.documentElement.classList.add('is-hinging')
       heatPeak.current = 0
@@ -805,16 +829,20 @@ export function Stage(props: Props) {
       const W = st?.width ?? 1000
       const fl = a.fl
       // Each window's part of the switch, linear (each path does its own easing).
-      const u = clamp01((a.p - IN_START) / (1 - IN_START))
-      const v = clamp01(a.p / OUT_END)
+      const u = clamp01((a.p - inStart) / (1 - inStart))
+      const v = clamp01(a.p / outEnd)
       // Going away: swung around its dot on the line, then let go and flung off into the deep.
       const dOut = markerCenter(a.from)
       const dotOut: [number, number] = dOut ? [dOut.x, dOut.y] : st ? [st.left - 150, st.top + st.height / 2] : [0, 0]
       const flungK = v > fl.ur ? (v - fl.ur) / (1 - fl.ur) : 0
+      // The pit it falls into opens just as it's let go, at the bottom of the shaft (the stage's
+      // centre, where it shrinks to). The backdrop eases it shut once the switch is done.
+      if (st) Object.assign(fxPit, { x0: st.left, y0: st.top, x1: st.right, y1: st.bottom, s: clamp01((v - fl.ur + 0.1) / 0.1) })
       const out = st
         ? placeFlight(f, ghostRef.current, plateRef.current, a.from, throwPose(fl, v, W, st, dotOut), 1, {
-            // Solid while it shrinks away; only fades out at the very end, a speck in the mist.
-            fade: clamp01((1 - flungK) / 0.25),
+            // Harder and harder to see through the mist as it sinks, then gone in a couple of
+            // frames: it blows up.
+            fade: Math.min(clamp01((HINGE_FX.burstAt + 0.04 - flungK) / 0.04), 1 - 0.65 * clamp01(flungK / HINGE_FX.burstAt)),
             rig: v <= fl.ur ? Math.pow(v / fl.ur, 0.7) : 0,
             // The force field eases off as it falls away.
             field: 1 - flungK,
@@ -822,8 +850,14 @@ export function Stage(props: Props) {
             kick: v > fl.ur && v < fl.ur + 0.12 ? 1 : 0
           })
         : null
+      // Far down, it blows up in a green flash (once per throw).
+      if (out && flungK >= HINGE_FX.burstAt && !burst.current) {
+        burst.current = true
+        const [tl, , br] = out.corners
+        Object.assign(fxBurst, { x: out.mid[0], y: out.mid[1], r: Math.max(6, Math.hypot(br[0] - tl[0], br[1] - tl[1]) / 2), corners: out.corners.map((p) => [...p]), color: colorOf(a.from), at: performance.now() })
+      }
       // The green mist it's swallowed by as it sinks.
-      ghostRef.current?.style.setProperty('--mist', clamp01((flungK - 0.4) / 0.6).toFixed(3))
+      ghostRef.current?.style.setProperty('--mist', (0.9 * clamp01(flungK / HINGE_FX.burstAt)).toFixed(3))
       const svgOut = connectorOutRef.current
       if (out && svgOut) {
         if (v <= fl.ur) {
@@ -858,6 +892,7 @@ export function Stage(props: Props) {
         if (u < lassoFrom) {
           svg.classList.remove('is-lassoing', 'is-caught')
           placeTether(svg, a.to, null, 0)
+          fxLasso.s = 0
         } else if (u < fl.uc) {
           // The lasso: the line shoots out from the dot toward where the window is.
           const d = markerCenter(a.to)
@@ -865,7 +900,8 @@ export function Stage(props: Props) {
           const x = d ? lerp(d.x + 12, inn.mid[0], k) : inn.mid[0]
           const y = d ? lerp(d.y, inn.mid[1], k) : inn.mid[1]
           svg.classList.add('is-lassoing')
-          placeTether(svg, a.to, { left: x, top: y - 1, bottom: y + 1 }, 1)
+          const pts = placeTether(svg, a.to, { left: x, top: y - 1, bottom: y + 1 }, 1)
+          Object.assign(fxLasso, { pts, s: pts ? k : 0 })
         } else {
           // Caught: the line goes taut on the window's edge while it's reeled in.
           if (!svg.classList.contains('is-caught')) {
@@ -873,7 +909,9 @@ export function Stage(props: Props) {
             void svg.getBoundingClientRect()
             svg.classList.add('is-caught')
           }
-          placeTether(svg, a.to, inn.edge, 1)
+          const pts = placeTether(svg, a.to, inn.edge, 1)
+          // The energy runs hardest just after the catch and dies off as it's reeled home.
+          Object.assign(fxLasso, { pts, s: pts ? clamp01(1.25 - s * 1.4) : 0 })
         }
       }
       const now = performance.now()
@@ -939,7 +977,7 @@ export function Stage(props: Props) {
       anim.current = { from, to, start: performance.now(), ms, p0: 0, target: 1, committed, p: 0, fl }
       raf.current = requestAnimationFrame(frame)
       // The dot's lock-on plays as it catches the window (or, without the catch, as it lands).
-      lockOn(to, hingedFlights() ? ms * (IN_START + fl.uc * (1 - IN_START)) : ms * 0.4)
+      lockOn(to, hingedFlights() ? ms * (HINGE.inStart + fl.uc * (1 - HINGE.inStart)) : ms * 0.4)
     },
     [finish, frame, onVisual, lockOn]
   )
@@ -959,7 +997,8 @@ export function Stage(props: Props) {
   useEffect(() => {
     const prev = lastPreview.current
     lastPreview.current = preview
-    if (preview && (!prev || prev.to !== preview.to)) start(preview.to, preview.ms, false)
+    // Hacker: the same length as a click (if the send-off window is longer, it holds at the end until it commits).
+    if (preview && (!prev || prev.to !== preview.to)) start(preview.to, hingedFlights() ? HINGE.ms : preview.ms, false)
     else if (!preview && prev && anim.current && !anim.current.committed && anim.current.to === prev.to) reverse()
   }, [preview, start, reverse])
 
@@ -980,7 +1019,7 @@ export function Stage(props: Props) {
       })
       return
     }
-    if (state.current.displayed !== activeId) start(activeId, hingedFlights() ? HINGE.clickMs : CLICK_MS, true)
+    if (state.current.displayed !== activeId) start(activeId, hingedFlights() ? HINGE.ms : CLICK_MS, true)
   }, [activeId, start, finish])
 
   useEffect(() => {
@@ -1053,7 +1092,7 @@ export function Stage(props: Props) {
   const color = bigId ? colorOf(bigId) : 'transparent'
 
   return (
-    <div className="stage" ref={frameRef} style={{ ['--active-c' as string]: color }}>
+    <div className="stage" ref={frameRef} style={{ ['--active-c' as string]: color }} onPointerEnter={(e) => glitchPanel(e.currentTarget)}>
       {([0, 1] as const).map((i) => (
         <TerminalLayer
           key={i}
@@ -1068,7 +1107,7 @@ export function Stage(props: Props) {
           className={i === front ? 'is-front' : i === back && layers[i] ? 'is-back' : 'is-idle'}
         />
       ))}
-      {/* Hinged flights (90s Hacker): the tile's thickness and its motion smear, [in, in, out, out]. */}
+      {/* Hinged flights (Hacker): the tile's thickness and its motion smear, [in, in, out, out]. */}
       {[0, 1].map((k) => (
         <div key={`s${k}`} className="flight-slab" ref={(el) => void (slabEls.current[k] = el)} />
       ))}

@@ -1,5 +1,5 @@
 /**
- * 90s Hacker: a thumbnail glitches out for a moment as the pointer reaches it. The real thumbnail
+ * Hacker: a thumbnail glitches out for a moment as the pointer reaches it. The real thumbnail
  * stays put (it only twitches). Short-lived copies of its picture go on top:
  *  - one carrying just the red channel and one just green-blue, sliding opposite ways in bands
  *    (a real chromatic aberration, with the terminal still underneath);
@@ -129,4 +129,62 @@ export function glitchThumb(slot: HTMLElement): void {
   window.setTimeout(() => {
     for (const g of ghosts) g.remove()
   }, ms + 20)
+}
+
+/** When each panel last glitched: once on the way in, not again for a moment. */
+const panelLast = new WeakMap<HTMLElement, number>()
+
+/**
+ * The same glitch for a whole panel (the big terminal, Quick replies, Queued) as the pointer
+ * comes onto it. There's no picture to copy, so the panel itself carries it: it rips into
+ * sideways-shoved bands (the shared #fx-thumb-rip), splits red / cyan, and twitches, for a few
+ * stepped frames. Played as an animation, so it never touches the panel's own styles.
+ */
+export function glitchPanel(el: HTMLElement): void {
+  if (document.documentElement.dataset.fx !== 'matrix') return
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  // Not mid-switch (the windows are flying) or while dragging a thumbnail.
+  if (document.documentElement.classList.contains('is-hinging') || el.classList.contains('is-switching') || document.querySelector('.drag-card')) return
+  const now = performance.now()
+  if (now - (panelLast.get(el) ?? -1e9) < 1200) return
+  panelLast.set(el, now)
+  const map = document.getElementById('fx-thumb-rip-map')
+  const noise = document.getElementById('fx-thumb-rip-noise')
+  const ms = rnd(210, 320)
+  const n = 3 + Math.floor(Math.random() * 3)
+  const power = rnd(0.6, 1.2)
+  el.animate(
+    frames(n + 1, (i, t) => {
+      if (i === n) return { transform: 'none', filter: 'none' }
+      // Every frame splits the colour (#fx-panel-ca, its offsets stepped below); most also rip
+      // (a quiet frame now and then, so it stutters).
+      const torn = Math.random() < 0.8 ? 'url(#fx-thumb-rip) ' : ''
+      return {
+        transform: `translateX(${(sign() * rnd(1, 4) * power * (1 - t)).toFixed(1)}px)`,
+        filter: `${torn}url(#fx-panel-ca)${i === 0 ? ` brightness(${rnd(1.08, 1.25).toFixed(2)})` : ''}`
+      }
+    }),
+    { duration: ms }
+  )
+  const caR = document.getElementById('fx-panel-ca-r')
+  const caGB = document.getElementById('fx-panel-ca-gb')
+  const dir = sign()
+  for (let i = 0; i < n; i++) {
+    window.setTimeout(() => {
+      const t = i / Math.max(1, n - 1)
+      // The red and the green-blue slid opposite ways, now and then swapping sides.
+      const s = rnd(3, 9) * power * (1 - t * 0.6) * (Math.random() < 0.25 ? -dir : dir)
+      caR?.setAttribute('dx', s.toFixed(1))
+      caGB?.setAttribute('dx', (-s).toFixed(1))
+      if (map && noise) {
+        map.setAttribute('scale', (Math.random() < 0.2 ? rnd(4, 8) : rnd(30, 55) * power).toFixed(0))
+        noise.setAttribute('seed', String(Math.floor(Math.random() * 1000)))
+      }
+    }, (i * ms) / n)
+  }
+  window.setTimeout(() => {
+    map?.setAttribute('scale', '0')
+    caR?.setAttribute('dx', '0')
+    caGB?.setAttribute('dx', '0')
+  }, ms)
 }

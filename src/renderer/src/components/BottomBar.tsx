@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { glitchPanel } from '../lib/thumbGlitch'
 import type { QueueItem, Settings } from '../../../shared/types'
 import { CloseArm } from './controls'
 
@@ -57,7 +58,7 @@ const label = (t: string) => t.trim().charAt(0).toUpperCase() + t.trim().slice(1
 
 function QuickReplies({ settings, disabled, onPill, onEdit }: { settings: Settings; disabled: boolean; onPill: (t: string) => void; onEdit: () => void }) {
   return (
-    <section className="bb-card bb-replies">
+    <section className="bb-card bb-replies" onPointerEnter={(e) => glitchPanel(e.currentTarget)}>
       <header className="bb-head">
         <span className="bb-icon">
           <BoltIcon />
@@ -105,7 +106,8 @@ function QueueInput(p: Props) {
     if (p.composerMode) inputRef.current?.focus()
   }, [p.composerMode, p.reviseId])
 
-  const reviseN = p.reviseId ? p.queue.findIndex((q) => q.id === p.reviseId) + 1 : 0
+  // Numbered as listed: newest first.
+  const reviseN = p.reviseId ? p.queue.length - p.queue.findIndex((q) => q.id === p.reviseId) : 0
   const placeholder = !p.sessionId
     ? 'No session'
     : p.composerMode === 'edit'
@@ -157,6 +159,7 @@ function QueuePanel(p: Props) {
     <section
       className={`bb-card bb-queue ${p.sessionId ? '' : 'is-disabled'} ${p.composerMode ? 'is-typing' : ''}`}
       style={{ ['--c' as string]: p.sessionColor }}
+      onPointerEnter={(e) => glitchPanel(e.currentTarget)}
     >
       <header className="bb-head">
         <span className="bb-icon">
@@ -170,7 +173,8 @@ function QueuePanel(p: Props) {
       <QueueInput {...p} />
       <div className="bb-list">
         {n === 0 && <p className="bb-empty">Nothing queued yet. Type above and press Enter; send it when the session is ready.</p>}
-        {p.queue.map((q, i) => (
+        {/* Newest first (the queue itself stays oldest first: that's the order it sends in). */}
+        {[...p.queue].reverse().map((q, i) => (
           <div key={q.id} className="bb-item" title={q.text}>
             <span className="bb-item-n">{i + 1}</span>
             <span className="bb-item-text">{q.text}</span>

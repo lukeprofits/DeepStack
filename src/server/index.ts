@@ -214,7 +214,7 @@ async function main(): Promise<void> {
       if (method === 'intent') return controller.intent(arg as never)
       throw new Error(`unknown method ${method}`)
     },
-    onInput: (id) => controller.onInput(id),
+    onInput: (id, data) => controller.onInput(id, data),
     getState: () => controller.state
   })
 

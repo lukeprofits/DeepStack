@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Terminal } from '@xterm/xterm'
+import { attachLinks } from '../lib/termLinks'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import type { TerminalTheme } from '../../../shared/types'
@@ -94,6 +95,7 @@ export const TerminalLayer = forwardRef<TerminalLayerHandle, Props>(function Ter
     } catch {
       /* falls back to the DOM renderer */
     }
+    attachLinks(term)
     termRef.current = term
     fitRef.current = fit
 

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:f
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { isEligible, nextSession } from '../shared/advance'
+import { feedLine, isSlashCommand } from './typedLine'
 import { pickColor } from '../shared/palette'
 import type { HostControl, HostEvent, ProcInfo, Snapshot } from '../shared/protocol'
 import { initialRuntime, reduceStatus, type StatusEvent } from '../shared/sessionStatus'
@@ -50,6 +51,12 @@ const INPUT_READY_MS = 400
 const RENAME_GAP_MS = 350
 /** After typing /rename, ignore the busy blip it causes for auto-switch purposes. */
 const RENAME_QUIET_MS = 3000
+/**
+ * A slash command (`/context`, `/model`…) flashes busy and is usually done at once, so it doesn't
+ * send you off. If the session is still busy this long after (a skill, /compact: real work),
+ * the send-off goes ahead after all.
+ */
+const SLASH_GRACE_MS = 2500
 /** An approval only pulls you away once you've stopped typing (or switching) for this long. */
 const APPROVAL_QUIET_MS = 2500
 const SNAPSHOT_EVERY_MS = 60_000
@@ -85,6 +92,10 @@ export class Controller {
   private pendingRenames = new Map<string, string>()
   /** When we last typed /rename into each session. */
   private renamedAt = new Map<string, number>()
+  /** What the human is typing into each session, and when they last submitted a slash command. */
+  private typed = new Map<string, string>()
+  private slashAt = new Map<string, number>()
+  private slashTimer: ReturnType<typeof setTimeout> | null = null
   private snapshots = new Map<string, Snapshot>()
   private snapshotReq = 0
   private snapshotWaiters = new Map<number, (s: Snapshot | null) => void>()
@@ -286,7 +297,17 @@ export class Controller {
     // Claude flashes busy while it runs our /rename; that's not a prompt being sent.
     const renaming = Date.now() - (this.renamedAt.get(id) ?? 0) < RENAME_QUIET_MS
     // During an approval run, answering decides where you go next (the run), not the send-off.
-    if (res.sentOff && !renaming && !this.state.hold && !this.run && this.state.settings.advanceMode !== 'off') this.startSendOff(id)
+    const canSendOff = () => !this.state.hold && !this.run && this.state.settings.advanceMode !== 'off'
+    if (res.sentOff && !renaming && canSendOff()) {
+      if (Date.now() - (this.slashAt.get(id) ?? 0) < RENAME_QUIET_MS) {
+        // A slash command: stay unless it turns out to be real work (still busy after the grace).
+        if (this.slashTimer) clearTimeout(this.slashTimer)
+        this.slashTimer = setTimeout(() => {
+          this.slashTimer = null
+          if (this.state.activeId === id && this.rt(id).phase === 'busy' && canSendOff()) this.startSendOff(id)
+        }, SLASH_GRACE_MS)
+      } else this.startSendOff(id)
+    }
     this.maybeSnap(id, before.phase, res.rt.phase)
     const raised = res.rt.phase === 'attention' && before.phase !== 'attention'
     const cleared = before.phase === 'attention' && res.rt.phase !== 'attention'
@@ -531,7 +552,10 @@ export class Controller {
   }
 
   /** The human typed into a session (terminal query replies already filtered out). */
-  onInput(id: string): void {
+  onInput(id: string, data = ''): void {
+    const fed = feedLine(this.typed.get(id) ?? '', data)
+    this.typed.set(id, fed.line.slice(-500))
+    if (fed.submitted.some(isSlashCommand)) this.slashAt.set(id, Date.now())
     this.status(id, { k: 'input' })
   }
 
@@ -644,7 +668,12 @@ export class Controller {
       this.writeText(id, text, true)
       this.removeQueued(id, itemId)
     } else if (phase === 'busy') {
-      if (!itemId) this.enqueue(id, text)
+      // SEND NOW on a queued message: typed straight into Claude, which queues it itself (as if
+      // you'd typed it in the terminal). Anything else sent while it works waits in our queue.
+      if (itemId) {
+        this.writeText(id, text, true)
+        this.removeQueued(id, itemId)
+      } else this.enqueue(id, text)
     } else {
       this.ensureSpawned(id)
       this.pendingSends.set(id, [...(this.pendingSends.get(id) ?? []), text])

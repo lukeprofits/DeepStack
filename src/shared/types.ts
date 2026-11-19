@@ -89,7 +89,7 @@ export interface Settings {
   hackBanner: boolean
   /** Custom words for the banner instead of "HACKING..."; one is picked each time you start typing again. */
   hackTexts: string[]
-  /** 90s Hacker: the chrome tears, shakes and fringes while you type (never the terminals). */
+  /** Hacker: the chrome tears, shakes and fringes while you type (never the terminals). */
   typingGlitch: boolean
 }
 

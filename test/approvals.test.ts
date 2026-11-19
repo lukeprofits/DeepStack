@@ -188,3 +188,34 @@ describe('queued messages', () => {
     expect(c.state.sessions[0].queue.map((q) => q.text)).toEqual(['second', 'third'])
   })
 })
+
+describe('slash commands', () => {
+  const sendOffsNow = () => sendOffs.filter((s) => s.reason === 'sendOff')
+  const submit = (text: string) => {
+    hook('A', 'SessionStart')
+    for (const ch of text) c.onInput('A', ch)
+    c.onInput('A', '\r')
+    hook('A', 'UserPromptSubmit')
+  }
+
+  it('a quick one (/context) does not send you off', () => {
+    submit('/context')
+    hook('A', 'Stop')
+    vi.advanceTimersByTime(3000)
+    expect(sendOffsNow()).toEqual([])
+    expect(c.state.activeId).toBe('A')
+  })
+
+  it('one that keeps Claude busy (a skill, /compact) sends you off after the grace', () => {
+    submit('/compact')
+    vi.advanceTimersByTime(1000)
+    expect(sendOffsNow()).toEqual([])
+    vi.advanceTimersByTime(2000)
+    expect(sendOffsNow().map((s) => s.id)).toEqual(['A'])
+  })
+
+  it('an ordinary prompt still sends you off at once, even one starting with a path', () => {
+    submit('/tmp/log.txt has the error, fix it')
+    expect(sendOffsNow().map((s) => s.id)).toEqual(['A'])
+  })
+})
